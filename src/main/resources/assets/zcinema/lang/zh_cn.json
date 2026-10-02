@@ -1,0 +1,46 @@
+{
+  "block.zcinema.screen_core": "屏幕核心",
+  "itemGroup.zcinema": "Z 放映厅",
+  "container.zcinema.screen": "放映屏幕",
+
+  "message.zcinema.created": "已识别 %1$sx%2$s 的屏幕区域",
+  "message.zcinema.not_flat": "这里不是一块平整的黑色混凝土屏幕墙",
+  "message.zcinema.removed": "已撤下屏幕核心，恢复为黑色混凝土",
+
+  "gui.zcinema.url": "MP4 直链",
+  "gui.zcinema.load": "载入",
+  "gui.zcinema.play": "播放",
+  "gui.zcinema.pause": "暂停",
+  "gui.zcinema.remove": "撤下屏幕",
+  "gui.zcinema.hint": "搭建一块黑色混凝土屏幕墙，木棍+潜行右键识别；同一链接全员同步播放。",
+  "gui.zcinema.status.idle": "粘贴 MP4 直链，然后点击“载入”",
+  "gui.zcinema.status.loading": "正在加载视频流…",
+  "gui.zcinema.status.playing": "播放中",
+  "gui.zcinema.status.paused": "已暂停",
+  "gui.zcinema.status.waiting": "正在等待其他玩家追赶上进度",
+  "gui.zcinema.status.stalled": "缓冲中…",
+  "gui.zcinema.status.ended": "播放结束",
+  "gui.zcinema.status.error": "打开视频流失败（请检查链接）",
+
+  "zcinema.configuration.sync.syncIntervalTicks": "同步间隔（游戏刻）",
+  "zcinema.configuration.sync.syncIntervalTicks.tooltip": "服务器向所有观众广播完整播放状态的频率。",
+  "zcinema.configuration.sync.globalStallPause": "有人卡顿时全员暂停",
+  "zcinema.configuration.sync.globalStallPause.tooltip": "某个客户端网络卡顿时，先冻结所有人的播放进度，等它恢复后再继续。",
+
+  "zcinema.configuration.stream.maxFrameWidth": "最大画面宽度",
+  "zcinema.configuration.stream.maxFrameWidth.tooltip": "解码时超过此宽度的画面会被缩小（节省带宽和性能）。",
+  "zcinema.configuration.stream.maxFrameHeight": "最大画面高度",
+  "zcinema.configuration.stream.maxFrameHeight.tooltip": "解码时超过此高度的画面会被缩小。",
+  "zcinema.configuration.stream.bufferSeconds": "缓冲秒数",
+  "zcinema.configuration.stream.bufferSeconds.tooltip": "本地解码领先共享时钟多少秒。",
+  "zcinema.configuration.stream.fpsCap": "帧率上限",
+  "zcinema.configuration.stream.fpsCap.tooltip": "用于计算解码缓冲区的帧率。",
+
+  "zcinema.configuration.sync.hardResyncSeconds": "硬同步容差（秒）",
+  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "本地进度与共享时钟偏差超过该值时重新打开视频流。",
+  "zcinema.configuration.sync.localStallMs": "卡顿上报延迟（毫秒）",
+  "zcinema.configuration.sync.localStallMs.tooltip": "本地缓冲耗尽超过该时间后通知服务器，服务器会先暂停所有人。",
+
+  "zcinema.configuration.audio.audioDistance": "声音传播距离",
+  "zcinema.configuration.audio.audioDistance.tooltip": "屏幕声音最远能被听到的距离。"
+}
