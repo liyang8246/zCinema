@@ -27,6 +27,12 @@ public final class ClientPlayback {
     public static FrameView frame(CinemaScreenBlockEntity be) {
         if (be == null || be.getLevel() == null || be.clientUrl().isBlank()) return null;
         PlaybackSession session = SESSIONS.get(be.getBlockPos());
+        if (session != null && !session.valid()) {
+            // A screen that used to sit here is gone; its session must not play on.
+            session.close();
+            SESSIONS.remove(be.getBlockPos());
+            session = null;
+        }
         if (session == null || !session.matchesUrl(be.clientUrl())) {
             if (session != null) session.close();
             session = PlaybackSession.open(be);
@@ -49,6 +55,13 @@ public final class ClientPlayback {
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, PlaybackSession> entry = iterator.next();
             PlaybackSession session = entry.getValue();
+            if (!session.valid() || session.blockEntity().clientUrl().isBlank()) {
+                // The screen was taken down, emptied or its chunk went away: stop everything
+                // right now instead of letting it play on against a stale block entity.
+                session.close();
+                iterator.remove();
+                continue;
+            }
             session.tick();
             if (now - session.touchedAt() > EXPIRE_MS) {
                 session.close();
@@ -70,7 +83,7 @@ public final class ClientPlayback {
         return session == null ? 0.0 : session.progress();
     }
 
-    /** Position to show in the UI: the shared clock, or our decod position before it arrives. */
+    /** Position to show in the UI: the shared clock, or our decode position before it arrives. */
     public static double displaySeconds(BlockPos pos) {
         PlaybackSession session = SESSIONS.get(pos);
         if (session != null) {
@@ -80,6 +93,26 @@ public final class ClientPlayback {
         }
         CinemaScreenBlockEntity be = find(pos);
         return be == null ? 0.0 : be.clientPositionSeconds();
+    }
+
+    // =============================== ui helpers ===============================
+
+    /** True while the local session is repositioning its stream. */
+    public static boolean seeking(BlockPos pos) {
+        PlaybackSession session = SESSIONS.get(pos);
+        return session != null && session.seeking();
+    }
+
+    /**
+     * Whether the source can be seeked cheaply, so the panel can explain slow drags instead of
+     * just sitting in "buffering".
+     */
+    public record SeekStatus(boolean active, boolean noRange) {}
+
+    public static SeekStatus seekStatus(BlockPos pos) {
+        PlaybackSession session = SESSIONS.get(pos);
+        if (session == null) return new SeekStatus(false, false);
+        return new SeekStatus(session.seeking(), !session.rangeSupported());
     }
 
     /** Duration to show in the UI: whatever the session or the server has learned. */
@@ -97,6 +130,11 @@ public final class ClientPlayback {
         return level.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be ? be : null;
     }
 
+    /**
+     * Rewrites the shared timeline at {@code seconds}. We send the event first so the server owns
+     * the new position, and tell our own decoder to seek right away so it does not decode through
+     * everything in between.
+     */
     public static void seek(BlockPos pos, double seconds) {
         PlaybackSession session = SESSIONS.get(pos);
         if (session != null) session.requestSeek(seconds);
@@ -112,7 +150,7 @@ public final class ClientPlayback {
     public static void handleState(S2CStatePacket packet) {
         CinemaScreenBlockEntity be = find(packet.pos());
         if (be == null) return;
-        be.applyClientState(packet.url(), packet.positionMs(), packet.playing(), packet.waiting(),
+        be.applyClientState(packet.url(), packet.positionMs(), packet.playing(), packet.frozen(),
                 packet.durationMs(), packet.hasArea(), packet.minX(), packet.minY(), packet.minZ(), packet.maxX(),
                 packet.maxY(), packet.maxZ(), packet.normal());
     }

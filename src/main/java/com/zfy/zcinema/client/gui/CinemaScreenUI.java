@@ -7,6 +7,7 @@ import com.zfy.zcinema.client.playback.PlaybackSession;
 import com.zfy.zcinema.gui.CinemaScreenMenu;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.C2SSetUrlPacket;
+import net.minecraft.core.BlockPos;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
@@ -97,6 +98,11 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
     @Override
     public void containerTick() {
         super.containerTick();
+        if (screen != null && ClientPlayback.find(screen.getBlockPos()) != screen) {
+            // The screen was taken down while the panel was open.
+            onClose();
+            return;
+        }
         if (urlField != null && !urlField.isFocused() && screen != null
                 && !urlField.getValue().equals(screen.clientUrl())) {
             urlField.setValue(screen.clientUrl());
@@ -110,8 +116,18 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         super.render(graphics, mouseX, mouseY, partialTick);
         urlField.render(graphics, mouseX, mouseY, partialTick);
 
-        graphics.drawString(this.font, Component.translatable(statusKey()), this.leftPos + 8, this.topPos + 92,
-                0xFFAAAAAA, false);
+        String status = Component.translatable(statusKey()).getString();
+        if (screen != null) {
+            ClientPlayback.SeekStatus seek = ClientPlayback.seekStatus(screen.getBlockPos());
+            if (seek.noRange()) {
+                // Rewinding a source that ignores Range requests costs a full re-decode; say so
+                // instead of looking like a hang.
+                status = status + "  "
+                        + Component.translatable("gui.zcinema.status.no_range").getString();
+            }
+        }
+        graphics.drawString(this.font, net.minecraft.network.chat.Component.literal(status),
+                this.leftPos + 8, this.topPos + 92, 0xFFAAAAAA, false);
         graphics.drawString(this.font, timeText(), this.leftPos + 8, this.topPos + 104, 0xFFCCCCCC, false);
         graphics.drawString(this.font, Component.translatable("gui.zcinema.hint"), this.leftPos + 8, this.topPos + 122,
                 0xFF777777, false);
@@ -119,12 +135,15 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
     private String statusKey() {
         if (screen == null) return "gui.zcinema.status.idle";
-        return switch (ClientPlayback.status(screen.getBlockPos())) {
+        BlockPos pos = screen.getBlockPos();
+        PlaybackSession.Status status = ClientPlayback.status(pos);
+        if (status == PlaybackSession.Status.LOADING && ClientPlayback.seeking(pos)) {
+            return "gui.zcinema.status.seeking";
+        }
+        return switch (status) {
             case LOADING -> "gui.zcinema.status.loading";
             case PLAYING -> "gui.zcinema.status.playing";
             case PAUSED -> "gui.zcinema.status.paused";
-            case WAITING -> "gui.zcinema.status.waiting";
-            case STALLED -> "gui.zcinema.status.stalled";
             case ENDED -> "gui.zcinema.status.ended";
             case ERROR -> "gui.zcinema.status.error";
             default -> "gui.zcinema.status.idle";
@@ -171,7 +190,7 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
         @Override
         protected void updateMessage() {
-            double duration = screen != null ? screen.clientDurationSeconds() : 0.0;
+            double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
             double seconds = duration > 0 ? this.value * duration : 0.0;
             setMessage(Component.literal(formatSeconds(seconds)));
         }
@@ -190,8 +209,11 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         @Override
         public void onRelease(MouseButtonEvent event) {
             this.dragging = false;
-            if (screen != null && screen.clientDurationSeconds() > 0.0) {
-                ClientPlayback.seek(screen.getBlockPos(), this.value * screen.clientDurationSeconds());
+            if (screen != null) {
+                double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
+                if (duration > 0.0) {
+                    ClientPlayback.seek(screen.getBlockPos(), this.value * duration);
+                }
             }
             super.onRelease(event);
         }

@@ -10,16 +10,13 @@ import net.minecraft.resources.Identifier;
 
 /**
  * Timeline control event. Every viewer sends these; the server folds them into the single shared
- * timeline and broadcasts the result. STALL/RESUME are the "my network hiccuped / recovered"
- * events that freeze and unfreeze the clock for everybody.
+ * timeline and broadcasts the result, so a click from anyone moves everybody at once.
  */
 public record C2SControlPacket(BlockPos pos, Action action, long positionMs) implements CustomPacketPayload {
     public enum Action {
         PLAY,
         PAUSE,
         SEEK,
-        STALL,
-        RESUME,
         REMOVE
     }
 

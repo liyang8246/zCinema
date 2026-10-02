@@ -3,6 +3,7 @@ package com.zfy.zcinema.net;
 import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
+import com.zfy.zcinema.net.packets.C2SHealthPacket;
 import com.zfy.zcinema.net.packets.C2SReportMediaPacket;
 import com.zfy.zcinema.net.packets.C2SSetUrlPacket;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
@@ -29,6 +30,8 @@ public final class ModNetworking {
                 (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
         registrar.playToServer(C2SReportMediaPacket.TYPE, C2SReportMediaPacket.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
+        registrar.playToServer(C2SHealthPacket.TYPE, C2SHealthPacket.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
 
         // Only ever received on the client; the lambda is what pulls the client classes in.
         registrar.playToClient(S2CStatePacket.TYPE, S2CStatePacket.STREAM_CODEC,
@@ -43,15 +46,17 @@ public final class ModNetworking {
             case C2SSetUrlPacket p -> p.pos();
             case C2SControlPacket p -> p.pos();
             case C2SReportMediaPacket p -> p.pos();
+            case C2SHealthPacket p -> p.pos();
             default -> null;
         };
         if (pos == null) return;
-        if (player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pos)) > 16 * 16) return;
+        if (player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pos)) > 128 * 128) return;
         if (server.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
             switch (payload) {
                 case C2SSetUrlPacket p -> be.setUrl(player, p.url());
                 case C2SControlPacket p -> be.control(player, p.action(), p.positionMs());
                 case C2SReportMediaPacket p -> be.reportDuration(p.durationMs());
+                case C2SHealthPacket p -> be.reportPlaybackHealth(player, p.health());
                 default -> {
                 }
             }

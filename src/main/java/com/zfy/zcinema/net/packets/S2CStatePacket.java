@@ -15,7 +15,7 @@ import net.minecraft.resources.Identifier;
  * viewer converges on the same timeline, no matter when they joined. Carries the screen geometry
  * as well so clients always know which rectangle of concrete is showing the video.
  */
-public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean playing, boolean waiting,
+public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean playing, boolean frozen,
                              long durationMs, boolean hasArea, long minX, long minY, long minZ, long maxX,
                              long maxY, long maxZ, int normal) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<S2CStatePacket> TYPE =
@@ -28,7 +28,7 @@ public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean 
             ByteBufCodecs.STRING_UTF8.encode(buffer, packet.url());
             buffer.writeVarLong(packet.positionMs());
             buffer.writeBoolean(packet.playing());
-            buffer.writeBoolean(packet.waiting());
+            buffer.writeBoolean(packet.frozen());
             buffer.writeVarLong(packet.durationMs());
             buffer.writeBoolean(packet.hasArea());
             buffer.writeVarLong(packet.minX());
@@ -46,7 +46,7 @@ public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean 
             String url = ByteBufCodecs.STRING_UTF8.decode(buffer);
             long positionMs = buffer.readVarLong();
             boolean playing = buffer.readBoolean();
-            boolean waiting = buffer.readBoolean();
+            boolean frozen = buffer.readBoolean();
             long durationMs = buffer.readVarLong();
             boolean hasArea = buffer.readBoolean();
             long minX = buffer.readVarLong();
@@ -56,7 +56,7 @@ public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean 
             long maxY = buffer.readVarLong();
             long maxZ = buffer.readVarLong();
             int normal = buffer.readVarInt();
-            return new S2CStatePacket(pos, url, positionMs, playing, waiting, durationMs, hasArea,
+            return new S2CStatePacket(pos, url, positionMs, playing, frozen, durationMs, hasArea,
                     minX, minY, minZ, maxX, maxY, maxZ, normal);
         }
     };

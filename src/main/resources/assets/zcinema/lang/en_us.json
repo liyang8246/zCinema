@@ -14,18 +14,18 @@
   "gui.zcinema.remove": "Remove screen",
   "gui.zcinema.hint": "Build a black concrete wall, then sneak + right-click it with a stick to register the screen.",
   "gui.zcinema.status.idle": "Paste an MP4 direct link and press Load",
-  "gui.zcinema.status.loading": "Loading the stream...",
+  "gui.zcinema.status.loading": "Buffering...",
+  "gui.zcinema.status.seeking": "Seeking...",
+  "gui.zcinema.status.no_range": "(source has no Range support: rewinding re-decodes - use a Range-capable server)",
   "gui.zcinema.status.playing": "Playing",
   "gui.zcinema.status.paused": "Paused",
-  "gui.zcinema.status.waiting": "Waiting for another viewer to catch up",
-  "gui.zcinema.status.stalled": "Buffering...",
   "gui.zcinema.status.ended": "Playback finished",
   "gui.zcinema.status.error": "Failed to open the stream (check the URL)",
 
   "zcinema.configuration.sync.syncIntervalTicks": "Sync interval (ticks)",
   "zcinema.configuration.sync.syncIntervalTicks.tooltip": "How often the server broadcasts the full playback state to viewers.",
-  "zcinema.configuration.sync.globalStallPause": "Pause everyone when one viewer stalls",
-  "zcinema.configuration.sync.globalStallPause.tooltip": "When one client stalls (network hiccup), pause the clock for everyone until it recovers.",
+  "zcinema.configuration.sync.globalStallPause": "Pause everyone when playback breaks",
+  "zcinema.configuration.sync.globalStallPause.tooltip": "When viewers report the source is unreachable, freeze the clock for everyone until playback recovers.",
 
   "zcinema.configuration.stream.maxFrameWidth": "Max frame width",
   "zcinema.configuration.stream.maxFrameWidth.tooltip": "Frames wider than this are downscaled while decoding (saves bandwidth/CPU).",
@@ -33,13 +33,9 @@
   "zcinema.configuration.stream.maxFrameHeight.tooltip": "Frames taller than this are downscaled while decoding.",
   "zcinema.configuration.stream.bufferSeconds": "Buffer seconds",
   "zcinema.configuration.stream.bufferSeconds.tooltip": "How far ahead of the shared clock this client decodes.",
-  "zcinema.configuration.stream.fpsCap": "Frame rate cap",
-  "zcinema.configuration.stream.fpsCap.tooltip": "Frame rate used to size the decode buffer.",
 
   "zcinema.configuration.sync.hardResyncSeconds": "Hard resync tolerance (seconds)",
-  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "If the shared clock and local playback diverge by more than this, reopen the stream.",
-  "zcinema.configuration.sync.localStallMs": "Local stall report delay (ms)",
-  "zcinema.configuration.sync.localStallMs.tooltip": "If this client runs out of buffered video for this long it tells the server, which pauses everyone until it recovers.",
+  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "If the shared clock and local playback diverge by more than this, the stream seeks instead of waiting.",
 
   "zcinema.configuration.audio.audioDistance": "Audio distance",
   "zcinema.configuration.audio.audioDistance.tooltip": "How far away the screen audio can be heard."

@@ -10,6 +10,7 @@ public final class DecodedFrame {
     public final int height;
 
     private boolean handedToTexture;
+    private boolean closed;
 
     public DecodedFrame(NativeImage image, double ts) {
         this.image = image;
@@ -24,6 +25,8 @@ public final class DecodedFrame {
     }
 
     public void close() {
+        if (closed) return;
+        closed = true;
         if (!handedToTexture) {
             image.close();
         }

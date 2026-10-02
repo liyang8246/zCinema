@@ -12,6 +12,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -25,20 +27,46 @@ import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 /**
  * Server-authoritative playback state for one screen, plus the rectangle of black concrete it
  * covers.
  *
  * <p>The server never touches the video data; it only owns the timeline:
  * <pre>
- *     effectivePosition = positionMs + (playing &amp;&amp; !waiting ? now - anchorMs : 0)
+ *     effectivePosition = positionMs + (playing &amp;&amp; !frozen ? now - anchorMs : 0)
  * </pre>
  * Clients replicate that formula against the last received snapshot and drive their own local
- * FFmpeg session against it. Every human or network event (play/pause/seek/local stall recovery)
- * becomes a small control packet that rewrites the timeline and is broadcast to all viewers.
+ * FFmpeg session against it. Every human or network event (play/pause/seek/report of a dying
+ * decoder) becomes a small packet that rewrites the timeline and is broadcast to all viewers.
+ *
+ * <p>Freezing is deliberately lazy: viewers report how healthy their own decoding is about once a
+ * second, and the clock only stops when those reports agree for a few seconds (Create Cinema's
+ * approach). One person's network blip cannot stutter the film for everybody else, and cannot
+ * freeze/unfreeze in a loop either.
  */
 public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider {
     private static final int CONTROL_RANGE_SQR = 24 * 24;
+    private static final double HEALTH_REPORT_RANGE_SQR = 128.0 * 128.0;
+
+    // How long a health report stays trusted, and how long the state has to stay bad/good for.
+    private static final long HEALTH_FRESH_TICKS = 60L;    // 3s
+    private static final long HEALTH_LEASE_TICKS = 200L;   // 10s
+    private static final long PAUSE_CONFIRM_TICKS = 60L;   // 3s
+    private static final long RESUME_CONFIRM_TICKS = 40L;  // 2s
+    private static final int DEGRADED_LATENCY_MILLIS = 1_000;
+
+    /** What a viewer says about its own decoding right now. */
+    public enum PlaybackHealth {
+        HEALTHY,
+        BUFFERING,
+        SOURCE_UNREACHABLE
+    }
+
+    private record ViewerHealth(PlaybackHealth health, long reportedAt) {}
 
     // ---- persisted: screen geometry ----
     private BlockPos screenMin;
@@ -48,7 +76,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     // ---- persisted (server clock) ----
     private String url = "";
     private boolean playing;
-    private boolean waiting; // a viewer stalled; the clock is frozen for everybody
+    private boolean frozen; // viewers agreed playback cannot continue; clock stopped for everybody
     private long positionMs; // position at the moment anchorMs was taken
     private long anchorMs;   // server wall clock of the last change
     private long durationMs; // learned from clients, 0 = unknown
@@ -58,11 +86,17 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     private long netPositionMs;
     private long netAtMs = System.currentTimeMillis();
     private boolean netPlaying;
-    private boolean netWaiting;
+    private boolean netFrozen;
     private long netDurationMs;
     private BlockPos netMin;
     private BlockPos netMax;
     private Direction netNormal = Direction.NORTH;
+
+    // ---- viewer health (server only) ----
+    private final Map<UUID, ViewerHealth> viewerHealth = new HashMap<>();
+    private boolean pendingPause;
+    private long pendingPauseSince;
+    private long healthySince;
 
     private int syncCounter;
     private int validateCounter = 20;
@@ -108,12 +142,12 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
      * to whatever is still connected.
      */
     private void validateScreenArea() {
-        if (!hasScreenArea() || level == null) return;
+        if (!hasScreenArea() || level == null || level.isClientSide()) return;
         boolean intact = true;
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = screenMin.getX(); x <= screenMax.getX() && intact; x++) {
             for (int y = screenMin.getY(); y <= screenMax.getY() && intact; y++) {
-                for (int z = screenMin.getZ(); z <= screenMax.getZ(); z++) {
+                for (int z = screenMin.getZ(); z <= screenMax.getZ() && intact; z++) {
                     cursor.set(x, y, z);
                     if (!ScreenDetector.isScreenMaterial(level.getBlockState(cursor))) {
                         intact = false;
@@ -141,7 +175,8 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
             validateCounter = 20; // once per second is plenty for self-healing
             validateScreenArea();
         }
-        if (playing && !waiting) {
+        evaluatePlaybackHealth();
+        if (playing && !frozen) {
             long effective = effectivePositionMs();
             if (durationMs > 0 && effective >= durationMs) {
                 positionMs = durationMs;
@@ -161,7 +196,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     /** The position every viewer should be at, right now. */
     public long effectivePositionMs() {
         long now = System.currentTimeMillis();
-        long position = positionMs + (playing && !waiting ? Math.max(0L, now - anchorMs) : 0L);
+        long position = positionMs + (playing && !frozen ? Math.max(0L, now - anchorMs) : 0L);
         return clamp(position);
     }
 
@@ -178,8 +213,9 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         positionMs = 0L;
         anchorMs = System.currentTimeMillis();
         playing = false;
-        waiting = false;
+        frozen = false;
         durationMs = 0L;
+        resetPlaybackHealth();
         dirty = true;
         setChanged();
         ZCinema.LOGGER.info("Screen {} now plays {} (set by {})", getBlockPos(),
@@ -192,49 +228,35 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
             case PLAY -> {
                 this.positionMs = effectivePositionMs();
                 playing = true;
-                waiting = false;
+                frozen = false;
                 anchorMs = System.currentTimeMillis();
+                resetPlaybackHealth();
                 dirty = true;
             }
             case PAUSE -> {
                 this.positionMs = effectivePositionMs();
                 playing = false;
+                frozen = false;
                 anchorMs = System.currentTimeMillis();
+                resetPlaybackHealth();
                 dirty = true;
             }
             case SEEK -> {
                 this.positionMs = clamp(Math.max(0L, positionMs));
-                waiting = false;
+                playing = true;
+                frozen = false;
                 anchorMs = System.currentTimeMillis();
+                resetPlaybackHealth();
                 dirty = true;
-            }
-            case STALL -> {
-                if (!waiting) {
-                    waiting = true;
-                    this.positionMs = clamp(Math.max(0L, positionMs));
-                    anchorMs = System.currentTimeMillis();
-                    dirty = true;
-                    if (CommonConfig.INSTANCE.globalStallPause.get()) {
-                        ZCinema.LOGGER.info("Screen {} stalled at {}ms, pausing for everyone (reported by {})",
-                                getBlockPos(), this.positionMs, player.getName().getString());
-                    }
-                }
-            }
-            case RESUME -> {
-                if (waiting) {
-                    waiting = false;
-                    this.positionMs = clamp(this.positionMs);
-                    anchorMs = System.currentTimeMillis();
-                    dirty = true;
-                }
             }
             case REMOVE -> {
                 url = "";
                 playing = false;
-                waiting = false;
+                frozen = false;
                 positionMs = 0L;
                 anchorMs = System.currentTimeMillis();
                 durationMs = 0L;
+                resetPlaybackHealth();
                 dirty = true;
                 if (level != null) {
                     level.setBlockAndUpdate(getBlockPos(),
@@ -247,10 +269,130 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
 
     public void reportDuration(long millis) {
         if (level == null || level.isClientSide() || millis <= 0L) return;
-        if (millis != durationMs) {
-            durationMs = millis;
+        // Only ever grow the duration we know: a viewer that reports a smaller value would drag
+        // the timeline (and every seek) backwards.
+        if (millis <= durationMs) return;
+        durationMs = millis;
+        dirty = true;
+        setChanged();
+        ZCinema.LOGGER.info("Screen {} learned the stream is {}s long", getBlockPos(), millis / 1000L);
+    }
+
+    /**
+     * Records what one viewer thinks of its own decoder. Ignored when the viewer is too far away,
+     * watching something else, or already disconnected.
+     */
+    public void reportPlaybackHealth(ServerPlayer player, PlaybackHealth health) {
+        if (level == null || level.isClientSide() || health == null || url.isBlank() || !playing) return;
+        if (player.level() != level
+                || player.distanceToSqr(Vec3.atCenterOf(getBlockPos())) > HEALTH_REPORT_RANGE_SQR
+                || player.hasDisconnected()) {
+            return;
+        }
+        ViewerHealth existing = viewerHealth.get(player.getUUID());
+        // Once we know the source itself is unreachable, a weaker report cannot downgrade it.
+        if (existing != null && existing.health() == PlaybackHealth.SOURCE_UNREACHABLE
+                && health == PlaybackHealth.BUFFERING) {
+            health = PlaybackHealth.SOURCE_UNREACHABLE;
+        }
+        viewerHealth.put(player.getUUID(), new ViewerHealth(health, level.getGameTime()));
+    }
+
+    /**
+     * Decide, from all viewer reports, whether the shared clock has to stop. Every transition is
+     * confirmed over several seconds in both directions, which is what keeps this stable.
+     */
+    private void evaluatePlaybackHealth() {
+        if (level == null || level.isClientSide() || level.getServer() == null) return;
+        if (url.isBlank() || !playing) {
+            if (!viewerHealth.isEmpty() || frozen || pendingPause) resetPlaybackHealth();
+            return;
+        }
+        long now = level.getGameTime();
+        viewerHealth.entrySet().removeIf(entry -> now - entry.getValue().reportedAt() > HEALTH_LEASE_TICKS
+                || level.getServer().getPlayerList().getPlayer(entry.getKey()) == null);
+
+        boolean singleplayer = level.getServer().isSingleplayer() && !level.getServer().isPublished();
+        int retained = 0;
+        int fresh = 0;
+        int healthy = 0;
+        int sourceFailures = 0;
+        int degraded = 0;
+        for (Map.Entry<UUID, ViewerHealth> entry : viewerHealth.entrySet()) {
+            ViewerHealth report = entry.getValue();
+            retained++;
+            boolean isFresh = now - report.reportedAt() <= HEALTH_FRESH_TICKS;
+            if (isFresh) {
+                fresh++;
+                if (report.health() == PlaybackHealth.HEALTHY) healthy++;
+                if (report.health() == PlaybackHealth.SOURCE_UNREACHABLE) sourceFailures++;
+            }
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (!isFresh || player == null || player.hasDisconnected()
+                    || player.connection.latency() >= DEGRADED_LATENCY_MILLIS) {
+                degraded++;
+            }
+        }
+
+        boolean shouldPause;
+        if (!CommonConfig.INSTANCE.globalStallPause.get()) {
+            shouldPause = false;
+        } else if (singleplayer) {
+            shouldPause = sourceFailures > 0;
+        } else {
+            shouldPause = fresh >= 2 && healthy == 0 && sourceFailures * 3 >= fresh * 2;
+        }
+        boolean serverLagging = CommonConfig.INSTANCE.globalStallPause.get()
+                && retained >= 2 && degraded * 3 >= retained * 2;
+
+        if (!frozen && !pendingPause) {
+            if (!shouldPause && !serverLagging) return;
+            pendingPause = true;
+            pendingPauseSince = now;
+            return;
+        }
+        if (frozen || pendingPause) {
+            boolean keepFrozen = shouldPause || serverLagging || !recovered(retained, singleplayer,
+                    fresh, healthy, sourceFailures, degraded);
+            if (!keepFrozen) {
+                if (healthySince == 0L) healthySince = now;
+                if (now - healthySince >= RESUME_CONFIRM_TICKS) {
+                    ZCinema.LOGGER.info("Screen {} recovered, the clock runs again", getBlockPos());
+                    frozen = false;
+                    pendingPause = false;
+                    pendingPauseSince = 0L;
+                    healthySince = 0L;
+                }
+                return;
+            }
+            healthySince = 0L;
+            if (pendingPause && !frozen && now - pendingPauseSince >= PAUSE_CONFIRM_TICKS) {
+                ZCinema.LOGGER.info("Screen {} stopped the clock: viewers report a broken source",
+                        getBlockPos());
+                frozen = true;
+                dirty = true;
+            }
+            return;
+        }
+    }
+
+    private static boolean recovered(int retained, boolean singleplayer, int fresh, int healthy,
+                                    int sourceFailures, int degraded) {
+        if (retained == 0) return true;
+        if (singleplayer) return healthy > 0;
+        if (degraded * 3 >= retained * 2) return fresh >= 1 && degraded == 0;
+        return healthy > 0 && sourceFailures == 0;
+    }
+
+    private void resetPlaybackHealth() {
+        viewerHealth.clear();
+        pendingPause = false;
+        pendingPauseSince = 0L;
+        healthySince = 0L;
+        if (frozen) {
+            frozen = false;
             dirty = true;
-            setChanged();
+            ZCinema.LOGGER.info("Screen {} unfroze the clock after a control action", getBlockPos());
         }
     }
 
@@ -258,14 +400,15 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         if (level == null || level.isClientSide()) return;
         ScreenArea area = screenArea();
         Vec3 center = area != null ? area.centerOutward(4.0) : Vec3.atCenterOf(getBlockPos());
-        S2CStatePacket packet = new S2CStatePacket(getBlockPos(), url, effectivePositionMs(), playing, waiting, durationMs,
+        S2CStatePacket packet = new S2CStatePacket(getBlockPos(), url, effectivePositionMs(), playing, frozen,
+                durationMs,
                 area != null,
                 area != null ? area.min().getX() : 0, area != null ? area.min().getY() : 0,
                 area != null ? area.min().getZ() : 0,
                 area != null ? area.max().getX() : 0, area != null ? area.max().getY() : 0,
                 area != null ? area.max().getZ() : 0,
                 area != null ? area.normal().get3DDataValue() : Direction.NORTH.get3DDataValue());
-        PacketDistributor.sendToPlayersNear((net.minecraft.server.level.ServerLevel) level, null,
+        PacketDistributor.sendToPlayersNear((ServerLevel) level, null,
                 center.x, center.y, center.z, radiusFor(area), packet);
     }
 
@@ -283,20 +426,20 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
 
     // =============================== client mirror ===============================
 
-    public void applyClientState(String url, long positionMs, boolean playing, boolean waiting, long durationMs) {
+    public void applyClientState(String url, long positionMs, boolean playing, boolean frozen, long durationMs) {
         this.netUrl = url == null ? "" : url;
         this.netPositionMs = durationMs > 0 ? Math.min(Math.max(0L, positionMs), durationMs) : Math.max(0L, positionMs);
         this.netPlaying = playing;
-        this.netWaiting = waiting;
+        this.netFrozen = frozen;
         this.netDurationMs = durationMs;
         this.netAtMs = System.currentTimeMillis();
     }
 
     /** Applies a full state snapshot (playback + screen geometry). */
-    public void applyClientState(String url, long positionMs, boolean playing, boolean waiting, long durationMs,
+    public void applyClientState(String url, long positionMs, boolean playing, boolean frozen, long durationMs,
                                  boolean hasArea, long minX, long minY, long minZ, long maxX, long maxY, long maxZ,
                                  int normal) {
-        applyClientState(url, positionMs, playing, waiting, durationMs);
+        applyClientState(url, positionMs, playing, frozen, durationMs);
         if (hasArea) {
             this.netMin = new BlockPos((int) minX, (int) minY, (int) minZ);
             this.netMax = new BlockPos((int) maxX, (int) maxY, (int) maxZ);
@@ -310,7 +453,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     /** Position this client believes is playing right now (extrapolated from the last snapshot). */
     public double clientPositionSeconds() {
         double seconds = netPositionMs / 1000.0;
-        if (netPlaying && !netWaiting) {
+        if (netPlaying && !netFrozen) {
             seconds += Math.max(0.0, (System.currentTimeMillis() - netAtMs) / 1000.0);
         }
         if (netDurationMs > 0) seconds = Math.min(seconds, netDurationMs / 1000.0);
@@ -325,8 +468,8 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         return netPlaying;
     }
 
-    public boolean clientWaiting() {
-        return netWaiting;
+    public boolean clientFrozen() {
+        return netFrozen;
     }
 
     public double clientDurationSeconds() {
@@ -351,7 +494,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     protected void saveAdditional(ValueOutput output) {
         output.putString("Url", url);
         output.putBoolean("Playing", playing);
-        output.putBoolean("Waiting", waiting);
+        output.putBoolean("Frozen", frozen);
         output.putLong("PositionMs", positionMs);
         output.putLong("AnchorMs", anchorMs);
         output.putLong("DurationMs", durationMs);
@@ -370,7 +513,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     protected void loadAdditional(ValueInput input) {
         url = input.getStringOr("Url", "");
         playing = input.getBooleanOr("Playing", false);
-        waiting = input.getBooleanOr("Waiting", false);
+        frozen = input.getBooleanOr("Frozen", false);
         positionMs = input.getLongOr("PositionMs", 0L);
         anchorMs = input.getLongOr("AnchorMs", 0L);
         durationMs = input.getLongOr("DurationMs", 0L);
@@ -385,7 +528,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         if (level != null && level.isClientSide()) {
             boolean hasArea = screenMin != null;
             applyClientState(input.getStringOr("ClientUrl", url), input.getLongOr("ClientPositionMs", positionMs),
-                    input.getBooleanOr("ClientPlaying", playing), input.getBooleanOr("ClientWaiting", waiting),
+                    input.getBooleanOr("ClientPlaying", playing), input.getBooleanOr("ClientFrozen", frozen),
                     input.getLongOr("ClientDurationMs", durationMs),
                     hasArea,
                     hasArea ? screenMin.getX() : 0, hasArea ? screenMin.getY() : 0, hasArea ? screenMin.getZ() : 0,
@@ -417,7 +560,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         output.putString("ClientUrl", url);
         output.putLong("ClientPositionMs", self.getLevel() != null ? effectivePositionMs() : positionMs);
         output.putBoolean("ClientPlaying", playing);
-        output.putBoolean("ClientWaiting", waiting);
+        output.putBoolean("ClientFrozen", frozen);
         output.putLong("ClientDurationMs", durationMs);
         return output.buildResult();
     }
