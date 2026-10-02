@@ -116,7 +116,8 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         super.render(graphics, mouseX, mouseY, partialTick);
         urlField.render(graphics, mouseX, mouseY, partialTick);
 
-        String status = Component.translatable(statusKey()).getString();
+        String status = ClientPlayback.status(screen.getBlockPos()) == PlaybackSession.Status.ERROR
+                ? statusKey() : Component.translatable(statusKey()).getString();
         if (screen != null) {
             ClientPlayback.SeekStatus seek = ClientPlayback.seekStatus(screen.getBlockPos());
             if (seek.noRange()) {
@@ -137,6 +138,10 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         if (screen == null) return "gui.zcinema.status.idle";
         BlockPos pos = screen.getBlockPos();
         PlaybackSession.Status status = ClientPlayback.status(pos);
+        if (status == PlaybackSession.Status.ERROR) {
+            String reason = ClientPlayback.errorMessage(pos);
+            return reason == null || reason.isBlank() ? "gui.zcinema.status.error" : reason;
+        }
         if (status == PlaybackSession.Status.LOADING && ClientPlayback.seeking(pos)) {
             return "gui.zcinema.status.seeking";
         }

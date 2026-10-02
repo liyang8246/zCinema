@@ -103,6 +103,16 @@ public final class ClientPlayback {
         return session != null && session.seeking();
     }
 
+    /** Human readable reason the session failed, if it did. */
+    public static String errorMessage(BlockPos pos) {
+        PlaybackSession session = SESSIONS.get(pos);
+        if (session == null) {
+            CinemaScreenBlockEntity be = find(pos);
+            return be == null || be.clientUrl().isBlank() ? null : "gui.zcinema.status.loading";
+        }
+        return session.errorMessage();
+    }
+
     /**
      * Whether the source can be seeked cheaply, so the panel can explain slow drags instead of
      * just sitting in "buffering".

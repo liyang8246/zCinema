@@ -100,7 +100,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
             return failedStream();
         }
         try {
-            StreamAudio opened = new StreamAudio(url, session::mediaSeconds, session.durationSeconds());
+            StreamAudio opened = new StreamAudio(session.streamUrl(), session::mediaSeconds,
+                    session.durationSeconds());
             if (stopped || !session.matchesUrl(url)) {
                 opened.close();
                 return failedStream();

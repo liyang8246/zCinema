@@ -67,6 +67,8 @@ public final class PlaybackSession {
     private final AtomicLong touchStamp = new AtomicLong();
 
     private final String url;
+    /** The direct stream the decoders actually open; resolved from {@link #url} when needed. */
+    private volatile String streamUrl;
     private final ArrayDeque<DecodedFrame> queue = new ArrayDeque<>();
     private final AtomicInteger generation = new AtomicInteger();
     private volatile boolean closed;
@@ -164,6 +166,12 @@ public final class PlaybackSession {
 
     public String url() {
         return url;
+    }
+
+    /** The direct link the local decoders open; equals {@link #url()} for direct MP4 links. */
+    public String streamUrl() {
+        String resolved = streamUrl;
+        return resolved == null || resolved.isBlank() ? url : resolved;
     }
 
     public double durationSeconds() {
@@ -346,7 +354,19 @@ public final class PlaybackSession {
         try {
             if (url.isBlank()) return;
             progress = 0.08F;
-            grabber = new FFmpegFrameGrabber(url);
+            // Resolve any indirect link (a parsing API, a share page) into a real stream first.
+            String source;
+            try {
+                source = SourceResolver.resolve(url);
+            } catch (IOException error) {
+                failed = true;
+                failedAt = System.currentTimeMillis();
+                errorMessage = SourceResolver.describe(error);
+                ZCinema.LOGGER.warn("Screen {} cannot resolve {}", pos, url, error);
+                return;
+            }
+            streamUrl = source;
+            grabber = new FFmpegFrameGrabber(source);
             grabber.setImageMode(FrameGrabber.ImageMode.RAW);
             configure(grabber);
             grabber.start();
@@ -478,6 +498,9 @@ public final class PlaybackSession {
             Thread.currentThread().interrupt();
         } catch (Throwable error) {
             if (!closed && !isRetired(generation)) {
+                // The stream may have been rejected because its signed address expired; drop the
+                // cached resolution so the next attempt fetches a fresh one.
+                SourceResolver.forget(url);
                 failed = true;
                 failedAt = System.currentTimeMillis();
                 errorMessage = String.valueOf(error.getMessage());
