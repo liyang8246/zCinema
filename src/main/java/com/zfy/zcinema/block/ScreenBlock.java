@@ -87,8 +87,7 @@ public class ScreenBlock extends Block implements EntityBlock {
 
     /** Pick-block and inventory display always show plain black concrete. */
     @Override
-    public ItemStack getCloneItemStack(LevelReader level, BlockPos pos, BlockState state, boolean includeData,
-                                       Player player) {
+    public ItemStack getCloneItemStack(LevelReader level, BlockPos pos, BlockState state) {
         return new ItemStack(Blocks.BLACK_CONCRETE);
     }
 

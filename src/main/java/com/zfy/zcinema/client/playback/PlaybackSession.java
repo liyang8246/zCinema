@@ -11,8 +11,8 @@ import com.zfy.zcinema.net.packets.C2SReportMediaPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
@@ -117,7 +117,7 @@ public final class PlaybackSession {
     private int recoveries;
 
     private DynamicTexture texture;
-    private Identifier textureLocation;
+    private ResourceLocation textureLocation;
     private int width;
     private int height;
 
@@ -321,7 +321,7 @@ public final class PlaybackSession {
         if (thread != null) thread.interrupt();
         clearQueue(false);
         if (textureLocation != null) {
-            Identifier location = textureLocation;
+            ResourceLocation location = textureLocation;
             Minecraft.getInstance().execute(() -> Minecraft.getInstance().getTextureManager().release(location));
         }
         texture = null;
@@ -631,7 +631,7 @@ public final class PlaybackSession {
     private FrameView upload(DecodedFrame frame) {
         if (texture == null || width != frame.width || height != frame.height) {
             if (textureLocation != null) Minecraft.getInstance().getTextureManager().release(textureLocation);
-            textureLocation = Identifier.fromNamespaceAndPath(ZCinema.MODID,
+            textureLocation = ResourceLocation.fromNamespaceAndPath(ZCinema.MODID,
                     "screen_stream/" + Long.toUnsignedString(pos.asLong()));
             texture = FrameUploader.create(frame.image);
             Minecraft.getInstance().getTextureManager().register(textureLocation, texture);
@@ -721,7 +721,7 @@ public final class PlaybackSession {
         long now = System.currentTimeMillis();
         if (now - lastHealthReportAt < HEALTH_REPORT_INTERVAL_MILLIS) return;
         lastHealthReportAt = now;
-        ClientPacketDistributor.sendToServer(new C2SHealthPacket(pos, health()));
+        PacketDistributor.sendToServer(new C2SHealthPacket(pos, health()));
     }
 
     public PlaybackHealth health() {
@@ -739,7 +739,7 @@ public final class PlaybackSession {
     private void sendDuration(double seconds) {
         durationReported = true;
         lastMediaReportAt = System.currentTimeMillis();
-        ClientPacketDistributor.sendToServer(new C2SReportMediaPacket(pos, url, (long) (seconds * 1000L)));
+        PacketDistributor.sendToServer(new C2SReportMediaPacket(pos, url, (long) (seconds * 1000L)));
     }
 
     // =============================== status ===============================

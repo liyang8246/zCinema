@@ -6,7 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Timeline control event. Every viewer sends these; the server folds them into the single shared
@@ -21,7 +21,7 @@ public record C2SControlPacket(BlockPos pos, Action action, long positionMs) imp
     }
 
     public static final CustomPacketPayload.Type<C2SControlPacket> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(ZCinema.MODID, "control"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(ZCinema.MODID, "control"));
 
     public static final StreamCodec<ByteBuf, C2SControlPacket> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, C2SControlPacket::pos,

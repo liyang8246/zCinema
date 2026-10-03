@@ -5,6 +5,7 @@
 .gradle/
 build/
 run/
+run-*/
 out/
 *.log
 

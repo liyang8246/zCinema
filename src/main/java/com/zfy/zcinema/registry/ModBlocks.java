@@ -15,7 +15,7 @@ public final class ModBlocks {
      * The screen surface: every block of a registered screen is this block. Its properties are
      * copied straight from black concrete, so it looks, sounds, breaks and drops identically.
      */
-    public static final DeferredBlock<Block> SCREEN = BLOCKS.registerBlock("screen", ScreenBlock::new, () ->
+    public static final DeferredBlock<Block> SCREEN = BLOCKS.registerBlock("screen", ScreenBlock::new,
             BlockBehaviour.Properties.ofFullCopy(Blocks.BLACK_CONCRETE).forceSolidOn());
 
     private ModBlocks() {}

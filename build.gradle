@@ -20,8 +20,8 @@ neoForge {
     version = project.neo_version
 
     parchment {
-        mappingsVersion = "2025.12.20"
-        minecraftVersion = "1.21.11"
+        mappingsVersion = "2024.11.17"
+        minecraftVersion = "1.21.1"
     }
 
     runs {
@@ -44,6 +44,8 @@ neoForge {
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
             logLevel = org.slf4j.event.Level.DEBUG
+            // Keep the 1.21.1 dev world away from the 1.21.11 one the main branch uses.
+            gameDirectory = project.file('run-1.21.1')
         }
     }
 
@@ -103,6 +105,16 @@ dependencies {
     if (bundledPlatforms.contains(bytedecoPlatform)) {
         localRuntime("org.bytedeco:javacpp:${javacv_version}:${bytedecoPlatform}")
         localRuntime("org.bytedeco:ffmpeg:${ffmpeg_version}:${bytedecoPlatform}")
+    }
+
+    // Minecraft 1.21.8 and older only puts mods (and jars listed here) into the game's module
+    // layer, so the decoder libraries have to be declared for dev runs explicitly.
+    add('additionalRuntimeClasspath', files(strippedJavaCv))
+    add('additionalRuntimeClasspath', "org.bytedeco:javacpp:${javacv_version}")
+    add('additionalRuntimeClasspath', "org.bytedeco:ffmpeg:${ffmpeg_version}")
+    if (bundledPlatforms.contains(bytedecoPlatform)) {
+        add('additionalRuntimeClasspath', "org.bytedeco:javacpp:${javacv_version}:${bytedecoPlatform}")
+        add('additionalRuntimeClasspath', "org.bytedeco:ffmpeg:${ffmpeg_version}:${bytedecoPlatform}")
     }
 
     bytedecoBundle("org.bytedeco:javacpp:${javacv_version}")

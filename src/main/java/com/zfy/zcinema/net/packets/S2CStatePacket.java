@@ -8,7 +8,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Full playback snapshot for one screen. Sent on every change and on a short interval so every
@@ -19,7 +19,7 @@ public record S2CStatePacket(BlockPos pos, String url, long positionMs, boolean 
                              long durationMs, boolean hasArea, long minX, long minY, long minZ, long maxX,
                              long maxY, long maxZ, int normal) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<S2CStatePacket> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(ZCinema.MODID, "state"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(ZCinema.MODID, "state"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, S2CStatePacket> STREAM_CODEC = new StreamCodec<>() {
         @Override

@@ -32,7 +32,7 @@ public class ZCinema {
         NeoForge.EVENT_BUS.register(new com.zfy.zcinema.event.ServerEvents());
         com.zfy.zcinema.event.PlayerInteractEvents.register();
 
-        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
             com.zfy.zcinema.client.ZCinemaClient.init(modEventBus, modContainer);
         }
     }

@@ -15,7 +15,7 @@ import net.minecraft.client.sounds.SoundBufferLibrary;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.WeighedSoundEvents;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.valueproviders.ConstantFloat;
@@ -64,7 +64,7 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     private volatile double latestPlayTime;
 
     CinemaSoundInstance(PlaybackSession session) {
-        super(Identifier.fromNamespaceAndPath(ZCinema.MODID,
+        super(ResourceLocation.fromNamespaceAndPath(ZCinema.MODID,
                         "screen_audio/" + Long.toUnsignedString(session.blockPos().asLong())),
                 SoundSource.RECORDS, RandomSource.create());
         this.session = session;
@@ -77,14 +77,14 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         this.volume = 1.0F;
         this.pitch = 1.0F;
         this.attenuation = SoundInstance.Attenuation.LINEAR;
-        this.sound = new Sound(identifier, ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
+        this.sound = new Sound(location, ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
                 Sound.Type.FILE, true, false, ClientConfig.INSTANCE.audioDistance.get());
         updatePosition();
     }
 
     @Override
     public WeighedSoundEvents resolve(SoundManager manager) {
-        WeighedSoundEvents events = new WeighedSoundEvents(identifier, null);
+        WeighedSoundEvents events = new WeighedSoundEvents(location, null);
         events.addSound(sound);
         return events;
     }

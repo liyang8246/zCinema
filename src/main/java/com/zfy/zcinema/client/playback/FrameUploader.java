@@ -11,7 +11,7 @@ final class FrameUploader {
     private FrameUploader() {}
 
     static DynamicTexture create(NativeImage image) {
-        return new DynamicTexture(() -> "zcinema_stream", image);
+        return new DynamicTexture(image);
     }
 
     static void update(DynamicTexture texture, NativeImage image) {

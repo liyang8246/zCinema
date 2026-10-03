@@ -19,10 +19,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.TagValueInput;
-import net.minecraft.world.level.storage.TagValueOutput;
-import net.minecraft.world.level.storage.ValueInput;
-import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -516,50 +512,49 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     // =============================== persistence ===============================
 
     @Override
-    protected void saveAdditional(ValueOutput output) {
-        output.putString("Url", url);
-        output.putBoolean("Playing", playing);
-        output.putBoolean("Frozen", frozen);
-        output.putLong("PositionMs", positionMs);
-        output.putLong("AnchorMs", anchorMs);
-        output.putLong("DurationMs", durationMs);
+    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.saveAdditional(tag, registries);
+        tag.putString("Url", url);
+        tag.putBoolean("Playing", playing);
+        tag.putBoolean("Frozen", frozen);
+        tag.putLong("PositionMs", positionMs);
+        tag.putLong("AnchorMs", anchorMs);
+        tag.putLong("DurationMs", durationMs);
         if (hasScreenArea()) {
-            output.putInt("MinX", screenMin.getX());
-            output.putInt("MinY", screenMin.getY());
-            output.putInt("MinZ", screenMin.getZ());
-            output.putInt("MaxX", screenMax.getX());
-            output.putInt("MaxY", screenMax.getY());
-            output.putInt("MaxZ", screenMax.getZ());
-            output.putInt("Normal", screenNormal.get3DDataValue());
+            tag.putInt("MinX", screenMin.getX());
+            tag.putInt("MinY", screenMin.getY());
+            tag.putInt("MinZ", screenMin.getZ());
+            tag.putInt("MaxX", screenMax.getX());
+            tag.putInt("MaxY", screenMax.getY());
+            tag.putInt("MaxZ", screenMax.getZ());
+            tag.putInt("Normal", screenNormal.get3DDataValue());
         }
     }
 
     @Override
-    protected void loadAdditional(ValueInput input) {
-        url = input.getStringOr("Url", "");
-        playing = input.getBooleanOr("Playing", false);
-        frozen = input.getBooleanOr("Frozen", false);
-        positionMs = input.getLongOr("PositionMs", 0L);
-        anchorMs = input.getLongOr("AnchorMs", 0L);
-        durationMs = input.getLongOr("DurationMs", 0L);
+    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.loadAdditional(tag, registries);
+        url = tag.getString("Url");
+        playing = tag.getBoolean("Playing");
+        frozen = tag.getBoolean("Frozen");
+        positionMs = tag.getLong("PositionMs");
+        anchorMs = tag.getLong("AnchorMs");
+        durationMs = tag.getLong("DurationMs");
         // anchorMs is a wall-clock stamp: a world saved while playing would otherwise resume as if
         // the film kept running while the game was closed - after a coffee break that lands on the
         // very end of the movie, so entering the world shows nothing. Reloading resumes the saved
         // position instead.
         anchorMs = System.currentTimeMillis();
-        if (input.getLongOr("MinX", Long.MIN_VALUE) != Long.MIN_VALUE
-                && input.getLongOr("MaxX", Long.MIN_VALUE) != Long.MIN_VALUE) {
-            screenMin = new BlockPos((int) input.getLongOr("MinX", 0), (int) input.getLongOr("MinY", 0),
-                    (int) input.getLongOr("MinZ", 0));
-            screenMax = new BlockPos((int) input.getLongOr("MaxX", 0), (int) input.getLongOr("MaxY", 0),
-                    (int) input.getLongOr("MaxZ", 0));
-            screenNormal = Direction.from3DDataValue((int) input.getLongOr("Normal", Direction.NORTH.get3DDataValue()));
+        if (tag.contains("MinX") && tag.contains("MaxX")) {
+            screenMin = new BlockPos(tag.getInt("MinX"), tag.getInt("MinY"), tag.getInt("MinZ"));
+            screenMax = new BlockPos(tag.getInt("MaxX"), tag.getInt("MaxY"), tag.getInt("MaxZ"));
+            screenNormal = Direction.from3DDataValue(tag.getInt("Normal"));
         }
         if (level != null && level.isClientSide()) {
             boolean hasArea = screenMin != null;
-            applyClientState(input.getStringOr("ClientUrl", url), input.getLongOr("ClientPositionMs", positionMs),
-                    input.getBooleanOr("ClientPlaying", playing), input.getBooleanOr("ClientFrozen", frozen),
-                    input.getLongOr("ClientDurationMs", durationMs),
+            applyClientState(tag.getString("ClientUrl"), tag.getLong("ClientPositionMs"),
+                    tag.getBoolean("ClientPlaying"), tag.getBoolean("ClientFrozen"),
+                    tag.getLong("ClientDurationMs"),
                     hasArea,
                     hasArea ? screenMin.getX() : 0, hasArea ? screenMin.getY() : 0, hasArea ? screenMin.getZ() : 0,
                     hasArea ? screenMax.getX() : 0, hasArea ? screenMax.getY() : 0, hasArea ? screenMax.getZ() : 0,
@@ -578,20 +573,17 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     }
 
     private CompoundTag saveFull(BlockEntity self) {
-        TagValueOutput output = TagValueOutput.createWithContext(net.minecraft.util.ProblemReporter.DISCARDING,
-                self.getLevel() != null ? self.getLevel().registryAccess() : net.minecraft.core.RegistryAccess.EMPTY);
-        BlockEntity.addEntityType(output, self.getType());
-        output.putInt("x", self.getBlockPos().getX());
-        output.putInt("y", self.getBlockPos().getY());
-        output.putInt("z", self.getBlockPos().getZ());
-        saveAdditional(output);
+        HolderLookup.Provider registries = self.getLevel() != null
+                ? self.getLevel().registryAccess()
+                : net.minecraft.core.RegistryAccess.EMPTY;
+        CompoundTag tag = self.saveWithFullMetadata(registries);
         // The raw persisted position is anchored to the server wall clock, so clients need the
         // extrapolated position instead of re-deriving it with their own clock.
-        output.putString("ClientUrl", url);
-        output.putLong("ClientPositionMs", self.getLevel() != null ? effectivePositionMs() : positionMs);
-        output.putBoolean("ClientPlaying", playing);
-        output.putBoolean("ClientFrozen", frozen);
-        output.putLong("ClientDurationMs", durationMs);
-        return output.buildResult();
+        tag.putString("ClientUrl", url);
+        tag.putLong("ClientPositionMs", self.getLevel() != null ? effectivePositionMs() : positionMs);
+        tag.putBoolean("ClientPlaying", playing);
+        tag.putBoolean("ClientFrozen", frozen);
+        tag.putLong("ClientDurationMs", durationMs);
+        return tag;
     }
 }

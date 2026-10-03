@@ -13,10 +13,9 @@ import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * The screen's control panel: URL box, play/pause and a seek slider. Everyone who opens it drives
@@ -60,7 +59,7 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
         addRenderableWidget(Button.builder(Component.translatable("gui.zcinema.load"), button -> {
             if (screen != null) {
-                ClientPacketDistributor.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
+                PacketDistributor.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
             }
         }).bounds(left + 198, top + 20, 50, 18).build());
 
@@ -265,21 +264,21 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         }
 
         @Override
-        public void onClick(MouseButtonEvent event, boolean doubleClick) {
+        public void onClick(double mouseX, double mouseY) {
             this.pressed = true;
-            super.onClick(event, doubleClick);
+            super.onClick(mouseX, mouseY);
         }
 
         @Override
-        protected void onDrag(MouseButtonEvent event, double mouseX, double mouseY) {
+        protected void onDrag(double mouseX, double mouseY, double dragX, double dragY) {
             this.pressed = true;
-            super.onDrag(event, mouseX, mouseY);
+            super.onDrag(mouseX, mouseY, dragX, dragY);
         }
 
         @Override
-        public void onRelease(MouseButtonEvent event) {
+        public void onRelease(double mouseX, double mouseY) {
             commit();
-            super.onRelease(event);
+            super.onRelease(mouseX, mouseY);
         }
 
         @Override

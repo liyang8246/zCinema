@@ -6,35 +6,25 @@ import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.playback.FrameView;
 import com.zfy.zcinema.screen.ScreenArea;
-import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
-import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
-import net.minecraft.client.renderer.state.CameraRenderState;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Draws the decoded video frame across the whole concrete rectangle of a screen. Picking the
  * frame happens here too, which is also what keeps the local stream session alive while the
  * screen is visible.
  */
-public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlockEntity, CinemaScreenRenderState> {
+public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlockEntity> {
     // The quad sits barely off the concrete face: close enough to look flush with the wall, far
     // enough that the block face and the picture do not fight over the same depth value.
     private static final float OFFSET = 0.01F;
 
     public CinemaScreenRenderer(BlockEntityRendererProvider.Context context) {
-    }
-
-    @Override
-    public CinemaScreenRenderState createRenderState() {
-        return new CinemaScreenRenderState();
     }
 
     /**
@@ -69,27 +59,18 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
      * above) is the only sensible culling volume.
      */
     @Override
-    public boolean shouldRenderOffScreen() {
+    public boolean shouldRenderOffScreen(CinemaScreenBlockEntity blockEntity) {
         return true;
     }
 
     @Override
-    public void extractRenderState(CinemaScreenBlockEntity blockEntity, CinemaScreenRenderState renderState,
-                                   float partialTick, Vec3 cameraPosition,
-                                   ModelFeatureRenderer.@Nullable CrumblingOverlay breakProgress) {
-        BlockEntityRenderer.super.extractRenderState(blockEntity, renderState, partialTick, cameraPosition, breakProgress);
-        renderState.frame = ClientPlayback.frame(blockEntity);
-        renderState.area = blockEntity.screenArea();
-    }
-
-    @Override
-    public void submit(CinemaScreenRenderState renderState, PoseStack poseStack, SubmitNodeCollector collector,
-                       CameraRenderState cameraRenderState) {
-        FrameView frame = renderState.frame;
-        ScreenArea area = renderState.area;
+    public void render(CinemaScreenBlockEntity blockEntity, float partialTick, PoseStack poseStack,
+                       MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+        FrameView frame = ClientPlayback.frame(blockEntity);
+        ScreenArea area = blockEntity.screenArea();
         if (frame == null || frame.texture() == null || area == null) return;
 
-        BlockPos anchor = renderState.blockPos;
+        BlockPos anchor = blockEntity.getBlockPos();
         // Wall-local rectangle extents (block units, relative to the anchor block).
         float minA;
         float minB;
@@ -141,14 +122,9 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
 
         float[][] fitted = letterbox(area.screenWidth(), area.screenHeight(), frame.width(), frame.height(),
                 corners, axisA, axisB);
+        VertexConsumer consumer = bufferSource.getBuffer(ModRenderPipelines.screen(frame.texture()));
         poseStack.pushPose();
-        float[][] finalCorners = fitted;
-        boolean finalFlip = flipU;
-        Direction finalNormal = normal;
-        // The screen draws with its own emissive, unlit pipeline: exactly the decoded colours, no
-        // room light, no fog tint from the dimension and no per-face shading.
-        collector.submitCustomGeometry(poseStack, ModRenderPipelines.screen(frame.texture()),
-                (pose, consumer) -> drawQuad(consumer, pose, finalNormal, finalCorners, finalFlip));
+        drawQuad(consumer, poseStack.last(), normal, fitted, flipU);
         poseStack.popPose();
     }
 
@@ -208,6 +184,7 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
         out[3][axisB] = centerB - halfB;
         return out;
     }
+
     private void drawQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction normal, float[][] c, boolean flipU) {
         float[][] uvs = {
                 {0.0F, 1.0F},
@@ -222,8 +199,6 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
             consumer.addVertex(pose, c[i][0], c[i][1], c[i][2])
                     .setColor(255, 255, 255, 255)
                     .setUv(uvs[i][0], uvs[i][1])
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setLight(15728880)
                     .setNormal(pose, normal.getStepX(), normal.getStepY(), normal.getStepZ());
         }
     }

@@ -56,7 +56,7 @@ final class FrameScaler implements AutoCloseable {
                 java.nio.IntBuffer pixels = output.position(0).capacity(byteCount)
                         .asByteBuffer().order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
                 for (int y = 0; y < targetHeight; y++) {
-                    for (int x = 0; x < targetWidth; x++) image.setPixelABGR(x, y, pixels.get());
+                    for (int x = 0; x < targetWidth; x++) image.setPixelRGBA(x, y, pixels.get());
                 }
             }
             return new DecodedFrame(image, 0.0);
