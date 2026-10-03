@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.playback;
 
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.ZCinemaLog;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -27,7 +28,10 @@ final class RangeSupport {
 
     static boolean supports(String key, String probeUrl) {
         return CACHE.computeIfAbsent(key, cacheKey -> {
+            long started = System.currentTimeMillis();
             boolean supported = probe(probeUrl);
+            ZCinemaLog.log("range", "probe %s -> %s in %dms", ZCinemaLog.shorten(probeUrl, 200),
+                    supported ? "supported" : "UNSUPPORTED", System.currentTimeMillis() - started);
             if (!supported) warnOnce(cacheKey);
             return supported;
         });
@@ -50,10 +54,17 @@ final class RangeSupport {
                     .build();
             HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
             try (InputStream ignored = response.body()) {
+                int status = response.statusCode();
+                if (status != 206) {
+                    ZCinemaLog.log("range", "probe answered HTTP %d for %s", status,
+                            ZCinemaLog.shorten(url, 200));
+                }
                 // 206 Partial Content means the source really honours Range requests.
-                return response.statusCode() == 206;
+                return status == 206;
             }
         } catch (Exception error) {
+            ZCinemaLog.log("range", "probe FAILED for %s: %s", ZCinemaLog.shorten(url, 200),
+                    error.getMessage());
             return false;
         }
     }

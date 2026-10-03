@@ -99,6 +99,46 @@
 
 > 服务端配置在开服时读取，改完重启服务器生效；客户端配置在启动时读取。
 
+## 排查日志
+
+每台机器（服务端和每个客户端）都会写一份独立的诊断日志：
+
+```
+logs/zcinema.log
+```
+
+行格式：
+
+```
+绝对毫秒时间戳  本地时间(HH:mm:ss.SSS)  端(C/S)  [类别]  线程  消息
+1791031126606 20:38:46.606 C [lifecycle] render === Z Cinema ... side=C ...
+```
+
+- **绝对时间戳**是为了把两台机器的日志按时间对齐——排查“多客户端不同步”时，把几份文件放在一起，同一时刻各自的状态一目了然。
+- **类别**：`lifecycle` `config` `gesture` `server` `net` `session` `clock` `seek` `decode` `buffer` `audio` `health` `state` `resolver` `range` `ui`。
+- 播放中的每个屏幕每秒会写一行 `[state]`，包含最关键的一组数字：
+
+```
+[state] screen=3,-58,-1 shared=334.582s media=334.551s itemStart=+0.031s drift=-0.031s
+        videoErr=-0.042s audioErr=+0.118s frame=334.540s buf=41/1.37s ready=true rebuf=false
+        seeking=false playing=true frozen=false clockMoving=true failed=false ended=false rangeOk=true
+```
+
+| 字段 | 含义 | 异常表现 |
+| --- | --- | --- |
+| `shared` | 服务端权威时钟（本地外推） | 各机器应一致 |
+| `media` | 本机正在播放的媒体时间轴 | 与 `shared` 差太多说明本机定位没跟上 |
+| `videoErr` | 最近上屏画面的时间 − `media` | 明显负值＝画面落后（卡帧、追帧中） |
+| `audioErr` | 声音估算位置 − `media` | 绝对值大＝音画不同步 |
+| `buf/ready/rebuf` | 帧队列长度/秒数、是否可播、是否在缓冲 | `rebuf=true` 表示正在等数据 |
+| `seeking` | 是否正在定位 | 长时间 true 说明源定位慢或卡住 |
+
+其它值得注意的事件行：`[seek] hard resync`（服务端时间轴跳变）、`[seek] applied/landed`（定位发起/落地耗时）、`[audio] reopen`（声音重开原因和漂移量）、`[clock] snapshot delta=`（服务端快照与本地外推的差值）、`[health] FROZEN/recovered`（全员冻结判定及依据数字）。
+
+反馈问题时请提供：**每台机器**的 `logs/zcinema.log` + `logs/latest.log`（日志超过 8MB 会自动轮转为 `zcinema.log.1`）。
+
+> 日志里会包含完整的视频链接（直链通常带签名参数），公开发布前注意删除。
+
 ## 构建
 
 ```bash

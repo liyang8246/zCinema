@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.playback;
 
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.ZCinemaLog;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -63,19 +64,28 @@ public final class SourceResolver {
     /** Resolves an indirect link to the stream URL behind it. */
     static String resolve(String url) throws IOException {
         if (url == null || url.isBlank()) throw new IOException("empty url");
-        if (looksDirect(url)) return url;
+        if (looksDirect(url)) {
+            ZCinemaLog.log("resolver", "direct link, no resolve needed: %s", ZCinemaLog.shorten(url, 300));
+            return url;
+        }
         Resolved cached = CACHE.get(url);
         if (cached != null && System.currentTimeMillis() - cached.resolvedAt() < CACHE_MILLIS) {
+            ZCinemaLog.log("resolver", "cache hit: %s -> %s", ZCinemaLog.shorten(url, 200),
+                    ZCinemaLog.shorten(cached.url(), 200));
             return cached.url();
         }
+        long started = System.currentTimeMillis();
         String resolved = follow(url);
         CACHE.put(url, new Resolved(resolved, System.currentTimeMillis()));
         ZCinema.LOGGER.info("Resolved {} to a direct stream", url);
+        ZCinemaLog.log("resolver", "resolved in %dms: %s -> %s", System.currentTimeMillis() - started,
+                ZCinemaLog.shorten(url, 200), ZCinemaLog.shorten(resolved, 200));
         return resolved;
     }
 
     /** Called when a stream fails, so a stale resolution is not kept for its whole lifetime. */
     static void forget(String url) {
+        ZCinemaLog.log("resolver", "cache forget: %s", ZCinemaLog.shorten(url, 200));
         CACHE.remove(url);
     }
 

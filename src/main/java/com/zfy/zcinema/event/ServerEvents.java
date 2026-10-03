@@ -1,5 +1,6 @@
 package com.zfy.zcinema.event;
 
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.block.ScreenBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.registry.ModBlocks;
@@ -30,6 +31,8 @@ public final class ServerEvents {
             if (!state.is(ModBlocks.SCREEN)) return true;
             CinemaScreenBlockEntity screen = findScreen(serverLevel, pos, state);
             if (screen != null) {
+                ZCinemaLog.log("server", "screen block broken pos=%s -> dissolve %s", pos.toShortString(),
+                        screen.getBlockPos().toShortString());
                 screen.dissolveScreen();
             }
             return true;
@@ -41,12 +44,17 @@ public final class ServerEvents {
         if (!(level.getChunk(pos.x, pos.z) instanceof LevelChunk chunk)) {
             return;
         }
-        chunk.getBlockEntities().values().forEach(be -> {
-            if (be instanceof CinemaScreenBlockEntity screen && screen.hasScreenArea()
+        int pushed = 0;
+        for (var blockEntity : chunk.getBlockEntities().values()) {
+            if (blockEntity instanceof CinemaScreenBlockEntity screen && screen.hasScreenArea()
                     && !screen.serverUrl().isBlank()) {
                 screen.broadcastState();
+                pushed++;
             }
-        });
+        }
+        if (pushed > 0) {
+            ZCinemaLog.log("net", "chunk watch push chunk=%s screens=%d", pos, pushed);
+        }
     }
 
     /**

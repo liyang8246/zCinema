@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.gui;
 
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.playback.PlaybackSession;
@@ -59,6 +60,8 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
         addRenderableWidget(Button.builder(Component.translatable("gui.zcinema.load"), button -> {
             if (screen != null) {
+                ZCinemaLog.log("ui", "load screen=%s url=%s", screen.getBlockPos().toShortString(),
+                        ZCinemaLog.shorten(urlField.getValue(), 300));
                 ModNetworking.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
             }
         }).bounds(left + 198, top + 20, 50, 18).build());
@@ -248,6 +251,8 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
             if (duration <= 0.0) return;
             this.committedValue = this.value;
             this.committedAt = System.currentTimeMillis();
+            ZCinemaLog.log("ui", "seek commit screen=%s value=%.4f duration=%.3fs target=%.3fs",
+                    screen.getBlockPos().toShortString(), this.value, duration, this.value * duration);
             ClientPlayback.seek(screen.getBlockPos(), this.value * duration);
         }
 

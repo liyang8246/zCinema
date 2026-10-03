@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.config;
 
 import com.google.gson.JsonObject;
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.config.JsonConfig;
 
 /**
@@ -38,5 +39,8 @@ public final class ClientConfig {
         out.addProperty("hardResyncSeconds", hardResyncSeconds);
         out.addProperty("audioDistance", audioDistance);
         JsonConfig.write(FILE_NAME, out);
+        ZCinemaLog.log("config", "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs audioDistance=%d "
+                        + "(config/%s)",
+                maxFrameWidth, maxFrameHeight, bufferSeconds, hardResyncSeconds, audioDistance, FILE_NAME);
     }
 }

@@ -1,6 +1,7 @@
 package com.zfy.zcinema.config;
 
 import com.google.gson.JsonObject;
+import com.zfy.zcinema.ZCinemaLog;
 
 /**
  * Server side knobs. Loaded on server start from {@code config/zcinema-common.json}.
@@ -24,5 +25,7 @@ public final class CommonConfig {
         out.addProperty("syncIntervalTicks", syncIntervalTicks);
         out.addProperty("globalStallPause", globalStallPause);
         JsonConfig.write(FILE_NAME, out);
+        ZCinemaLog.log("config", "common loaded: syncIntervalTicks=%d globalStallPause=%s (config/%s)",
+                syncIntervalTicks, globalStallPause, FILE_NAME);
     }
 }

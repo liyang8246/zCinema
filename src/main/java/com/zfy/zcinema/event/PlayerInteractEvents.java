@@ -1,5 +1,6 @@
 package com.zfy.zcinema.event;
 
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.block.ScreenBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.gui.CinemaScreenMenu;
@@ -59,11 +60,16 @@ public final class PlayerInteractEvents {
             ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
             if (area == null) {
                 tell(player, "message.zcinema.not_flat");
+                ZCinemaLog.log("gesture", "not flat pos=%s face=%s player=%s", pos.toShortString(), hitFace,
+                        player.getName().getString());
                 return InteractionResult.SUCCESS;
             }
 
             CinemaScreenBlockEntity existing = findScreen(serverLevel, area);
             if (existing != null) {
+                ZCinemaLog.log("gesture", "open panel screen=%s pos=%s player=%s",
+                        existing.getBlockPos().toShortString(), pos.toShortString(),
+                        player.getName().getString());
                 openPanel(player, existing);
                 return InteractionResult.SUCCESS;
             }
@@ -76,6 +82,9 @@ public final class PlayerInteractEvents {
                 be.broadcastState();
             }
             tell(player, "message.zcinema.created", area.screenWidth(), area.screenHeight());
+            ZCinemaLog.log("gesture", "create screen=%s size=%dx%d normal=%s player=%s",
+                    area.min().toShortString(), area.screenWidth(), area.screenHeight(), area.normal(),
+                    player.getName().getString());
             return InteractionResult.SUCCESS;
         });
     }

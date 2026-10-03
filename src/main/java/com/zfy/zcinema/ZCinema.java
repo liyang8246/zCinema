@@ -23,6 +23,8 @@ public class ZCinema implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        ZCinemaLog.header();
+
         ModBlocks.register();
         ModBlockEntities.register();
         ModMenus.register();

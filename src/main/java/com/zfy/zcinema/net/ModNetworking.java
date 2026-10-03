@@ -1,5 +1,6 @@
 package com.zfy.zcinema.net;
 
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.C2SHealthPacket;
@@ -49,6 +50,8 @@ public final class ModNetworking {
 
     private static void handleC2S(CustomPacketPayload payload, ServerPlayer player) {
         if (player == null) return;
+        ZCinemaLog.log("net", "C2S %s from=%s", ZCinemaLog.shorten(payload.toString(), 220),
+                player.getName().getString());
         var pos = switch (payload) {
             case C2SSetUrlPacket p -> p.pos();
             case C2SControlPacket p -> p.pos();
@@ -57,7 +60,12 @@ public final class ModNetworking {
             default -> null;
         };
         if (pos == null) return;
-        if (player.distanceToSqr(Vec3.atCenterOf(pos)) > CONTROL_RANGE_SQR) return;
+        double distanceSqr = player.distanceToSqr(Vec3.atCenterOf(pos));
+        if (distanceSqr > CONTROL_RANGE_SQR) {
+            ZCinemaLog.log("net", "C2S %s from=%s REJECTED: distance=%.1f", payload.type().id(),
+                    player.getName().getString(), Math.sqrt(distanceSqr));
+            return;
+        }
         if (player.level().getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
             switch (payload) {
                 case C2SSetUrlPacket p -> be.setUrl(player, p.url());
@@ -72,13 +80,18 @@ public final class ModNetworking {
 
     /** Client side helper: send one payload to the server. */
     public static void sendToServer(CustomPacketPayload payload) {
+        ZCinemaLog.log("net", "C2S send %s", ZCinemaLog.shorten(payload.toString(), 220));
         ClientPlayNetworking.send(payload);
     }
 
     /** Send a payload to every player within {@code radius} of {@code center}. */
     public static void sendToPlayersNear(ServerLevel level, Vec3 center, double radius, CustomPacketPayload payload) {
+        int players = 0;
         for (ServerPlayer player : PlayerLookup.around(level, center, radius)) {
             ServerPlayNetworking.send(player, payload);
+            players++;
         }
+        ZCinemaLog.log("net", "S2C %s -> %d players around %.1f/%.1f/%.1f (r=%.0f)",
+                ZCinemaLog.shorten(payload.toString(), 220), players, center.x, center.y, center.z, radius);
     }
 }

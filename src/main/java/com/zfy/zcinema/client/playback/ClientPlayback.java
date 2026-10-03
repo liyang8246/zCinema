@@ -1,5 +1,6 @@
 package com.zfy.zcinema.client.playback;
 
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.audio.ScreenAudio;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
@@ -29,12 +30,12 @@ public final class ClientPlayback {
         PlaybackSession session = SESSIONS.get(be.getBlockPos());
         if (session != null && !session.valid()) {
             // A screen that used to sit here is gone; its session must not play on.
-            session.close();
+            session.close("screen gone");
             SESSIONS.remove(be.getBlockPos());
             session = null;
         }
         if (session == null || !session.matchesUrl(be.clientUrl())) {
-            if (session != null) session.close();
+            if (session != null) session.close("url changed");
             session = PlaybackSession.open(be);
             if (session == null) return null;
             SESSIONS.put(be.getBlockPos(), session);
@@ -60,13 +61,13 @@ public final class ClientPlayback {
                 // The screen was taken down, emptied, its chunk went away, or it switched links:
                 // stop everything right now instead of letting it play on against a stale block
                 // entity or report the previous film's duration for the new one.
-                session.close();
+                session.close("screen gone or url changed");
                 iterator.remove();
                 continue;
             }
             session.tick();
             if (now - session.touchedAt() > EXPIRE_MS) {
-                session.close();
+                session.close("expired (screen not rendered for " + EXPIRE_MS + "ms)");
                 iterator.remove();
             }
         }
@@ -149,12 +150,15 @@ public final class ClientPlayback {
      */
     public static void seek(BlockPos pos, double seconds) {
         PlaybackSession session = SESSIONS.get(pos);
+        ZCinemaLog.log("ui", "seek screen=%s target=%.3fs localSession=%s", pos.toShortString(), seconds,
+                session != null);
         if (session != null) session.requestSeek(seconds);
         ModNetworking.sendToServer(new C2SControlPacket(pos, C2SControlPacket.Action.SEEK,
                 (long) (seconds * 1000L)));
     }
 
     public static void control(BlockPos pos, C2SControlPacket.Action action) {
+        ZCinemaLog.log("ui", "control screen=%s action=%s", pos.toShortString(), action);
         ModNetworking.sendToServer(new C2SControlPacket(pos, action, 0L));
     }
 
@@ -170,7 +174,7 @@ public final class ClientPlayback {
         // duration (or health) for the new one.
         PlaybackSession session = SESSIONS.get(packet.pos());
         if (session != null && !session.matchesUrl(packet.url())) {
-            session.close();
+            session.close("state switched url");
             SESSIONS.remove(packet.pos());
         }
     }

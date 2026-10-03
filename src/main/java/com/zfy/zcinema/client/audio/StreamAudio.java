@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.audio;
 
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.client.playback.SourceResolver;
 import net.minecraft.client.sounds.AudioStream;
 
@@ -57,6 +58,7 @@ public final class StreamAudio implements AudioStream {
     private double exactStartSeconds = Double.NaN;
 
     public StreamAudio(String url, DoubleSupplier startSeconds, double knownDuration) throws IOException {
+        long openedAt = System.currentTimeMillis();
         org.bytedeco.javacv.FFmpegFrameGrabber opened = null;
         InputStream openedInput = null;
         try {
@@ -84,6 +86,8 @@ public final class StreamAudio implements AudioStream {
                 } catch (Exception error) {
                     ZCinema.LOGGER.debug("Audio seek to {}s failed, decoding from the start",
                             currentStart, error);
+                    ZCinemaLog.log("audio", "stream seek FAILED target=%.3fs: %s", currentStart,
+                            error.getMessage());
                 }
             }
             int sampleRate = grabber.getSampleRate() > 0 ? grabber.getSampleRate() : 48_000;
@@ -99,6 +103,9 @@ public final class StreamAudio implements AudioStream {
             // the picture is by now (Create Cinema's catch-up).
             double catchUpSeconds = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
             startTime = wrap(currentStart + discardBufferedSeconds(catchUpSeconds), duration);
+            ZCinemaLog.log("audio", "stream ready url=%s start=%.3fs duration=%.3fs %dHz x%d took=%dms",
+                    ZCinemaLog.shorten(url, 200), startTime, duration, format.getSampleRate(),
+                    format.getChannels(), System.currentTimeMillis() - openedAt);
         } catch (Exception error) {
             if (opened != null) {
                 try {
@@ -178,6 +185,7 @@ public final class StreamAudio implements AudioStream {
             }
         } finally {
             decoderEnded = true;
+            ZCinemaLog.log("audio", "decode thread ended");
             closeResources();
         }
     }
@@ -313,6 +321,7 @@ public final class StreamAudio implements AudioStream {
     public void close() {
         if (closed) return;
         closed = true;
+        ZCinemaLog.log("audio", "stream close start=%.3fs", startTime);
         decoderThread.interrupt();
         decoded.clear();
         bufferedBytes.set(0);

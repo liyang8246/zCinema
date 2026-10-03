@@ -1,7 +1,8 @@
 package com.zfy.zcinema.client.audio;
 
-import com.zfy.zcinema.client.playback.PlaybackSession;
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.ZCinemaLog;
+import com.zfy.zcinema.client.playback.PlaybackSession;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
@@ -39,13 +40,14 @@ public final class ScreenAudio {
         if (minecraft.isPaused()) {
             if (INSTANCES.containsKey(pos)) {
                 ZCinema.LOGGER.debug("Screen {} audio stopped: the game is paused", pos);
-                stop(pos);
+                stop(pos, "game paused");
             }
             return;
         }
 
         CinemaSoundInstance current = INSTANCES.get(pos);
         if (current != null && current.isStopped()) {
+            ZCinemaLog.log("audio", "sound stopped itself screen=%s", pos.toShortString());
             INSTANCES.remove(pos);
             minecraft.getSoundManager().stop(current);
             current = null;
@@ -53,7 +55,9 @@ public final class ScreenAudio {
 
         if (!session.audioReady()) {
             if (current != null) {
-                current.stopInstance();
+                String blocker = session.audioReadyBlocker();
+                ZCinemaLog.log("audio", "stopping screen=%s: not ready (%s)", pos.toShortString(), blocker);
+                current.stopInstance("audio not ready: " + blocker);
                 minecraft.getSoundManager().stop(current);
                 INSTANCES.remove(pos);
             }
@@ -72,13 +76,28 @@ public final class ScreenAudio {
             if (drifted || broken) {
                 // Only reopen while the shared clock has moved since this sound last saw it:
                 // otherwise a paused or stuck timeline would spin here forever.
-                if (!session.advancedSince(current.latestPlayTime())) return;
+                if (!session.advancedSince(current.latestPlayTime())) {
+                    ZCinemaLog.log("audio", "reopen deferred screen=%s: clock has not moved since %.3fs",
+                            pos.toShortString(), current.latestPlayTime());
+                    return;
+                }
                 // Every reopen - drift or failure alike - is rate limited, and repeated failures
                 // back off, so a source that cannot be opened is not retried every frame.
                 int failures = FAILURES.getOrDefault(pos, 0);
-                if (now - LAST_RESTART.getOrDefault(pos, 0L) < cooldown(failures)) return;
+                long cooldown = cooldown(failures);
+                long sinceRestart = now - LAST_RESTART.getOrDefault(pos, 0L);
+                if (sinceRestart < cooldown) {
+                    ZCinemaLog.log("audio", "reopen throttled screen=%s: %dms of %dms cooldown, "
+                                    + "failures=%d", pos.toShortString(), sinceRestart, cooldown, failures);
+                    return;
+                }
                 LAST_RESTART.put(pos, now);
                 FAILURES.put(pos, Math.min(failures + 1, 3));
+                String reason = drifted ? "drifted" : "broken";
+                ZCinemaLog.log("audio", "reopen screen=%s reason=%s position=%.3fs master=%.3fs "
+                                + "drift=%+.3fs unstarted=%s openFailed=%s driftRestart=%s failures=%d",
+                        pos.toShortString(), reason, position, masterSeconds, position - masterSeconds,
+                        current.unstarted(), current.openFailed(), current.driftRestart(), failures + 1);
                 if (drifted) {
                     ZCinema.LOGGER.debug("Screen {} audio drifted to {}s while the clock is at {}s, "
                             + "reopening", pos,
@@ -88,7 +107,7 @@ public final class ScreenAudio {
                     ZCinema.LOGGER.warn("Screen {} audio needs a reopen (attempt {}), backing off", pos,
                             failures + 1);
                 }
-                current.stopInstance();
+                current.stopInstance("reopen: " + reason);
                 minecraft.getSoundManager().stop(current);
                 INSTANCES.remove(pos);
                 current = null;
@@ -105,6 +124,8 @@ public final class ScreenAudio {
             CinemaSoundInstance instance = new CinemaSoundInstance(session);
             INSTANCES.put(pos, instance);
             RETRY_AT.remove(pos);
+            ZCinemaLog.log("audio", "start screen=%s at=%.3fs master=%.3fs", pos.toShortString(),
+                    session.mediaSeconds(), masterSeconds);
             minecraft.getSoundManager().play(instance);
         }
     }
@@ -116,8 +137,11 @@ public final class ScreenAudio {
 
     public static void clear() {
         Minecraft minecraft = Minecraft.getInstance();
+        if (!INSTANCES.isEmpty()) {
+            ZCinemaLog.log("audio", "clear: %d sounds", INSTANCES.size());
+        }
         INSTANCES.values().forEach(instance -> {
-            instance.stopInstance();
+            instance.stopInstance("screen audio cleared");
             minecraft.getSoundManager().stop(instance);
         });
         INSTANCES.clear();
@@ -128,12 +152,26 @@ public final class ScreenAudio {
 
     /** Silences one screen immediately (used when the screen itself goes away). */
     public static void stop(BlockPos pos) {
+        stop(pos, "unspecified");
+    }
+
+    public static void stop(BlockPos pos, String reason) {
         CinemaSoundInstance instance = INSTANCES.remove(pos);
         if (instance == null) return;
-        instance.stopInstance();
+        ZCinemaLog.log("audio", "stop screen=%s reason=%s", pos.toShortString(), reason);
+        instance.stopInstance(reason);
         Minecraft.getInstance().getSoundManager().stop(instance);
         RETRY_AT.remove(pos);
         LAST_RESTART.remove(pos);
         FAILURES.remove(pos);
+    }
+
+    /**
+     * Estimated media position of the sound currently playing for a screen, or NaN when there is
+     * none. Used by the diagnostics state line to compare audio and video without guessing.
+     */
+    public static double debugPosition(BlockPos pos) {
+        CinemaSoundInstance instance = INSTANCES.get(pos);
+        return instance == null ? Double.NaN : instance.audioPositionSeconds();
     }
 }
