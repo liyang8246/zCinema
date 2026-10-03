@@ -121,7 +121,8 @@ logs/zcinema.log
 ```
 [state] screen=3,-58,-1 shared=334.582s media=334.551s itemStart=+0.031s drift=-0.031s
         videoErr=-0.042s audioErr=+0.118s frame=334.540s buf=41/1.37s ready=true rebuf=false
-        seeking=false playing=true frozen=false clockMoving=true failed=false ended=false rangeOk=true
+        seeking=false resyncing=false playing=true frozen=false clockMoving=true failed=false
+        ended=false rangeOk=true
 ```
 
 | 字段 | 含义 | 异常表现 |
@@ -132,6 +133,7 @@ logs/zcinema.log
 | `audioErr` | 声音估算位置 − `media` | 绝对值大＝音画不同步 |
 | `buf/ready/rebuf` | 帧队列长度/秒数、是否可播、是否在缓冲 | `rebuf=true` 表示正在等数据 |
 | `seeking` | 是否正在定位 | 长时间 true 说明源定位慢或卡住 |
+| `resyncing` | 是否正在“对齐共享时钟”的重定位 | 前跳/回跳后应短暂为 true，随后归位 |
 
 其它值得注意的事件行：`[seek] hard resync`（服务端时间轴跳变）、`[seek] applied/landed`（定位发起/落地耗时）、`[audio] reopen`（声音重开原因和漂移量）、`[clock] snapshot delta=`（服务端快照与本地外推的差值）、`[health] FROZEN/recovered`（全员冻结判定及依据数字）。
 

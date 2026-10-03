@@ -116,6 +116,9 @@ public final class PlaybackSession {
     private long lastSeekAt;
     /** When the decoded position first diverged from the shared clock by a real amount. */
     private long divergenceSince;
+    /** True from issuing a reposition until its frames landed (or gave up). */
+    private volatile boolean resyncing;
+    private long resyncSince;
     private long lastHealthReportAt;
     private long lastMediaReportAt;
     /** Early-EOF recovery: how often we may reposition, and how long we keep trying. */
@@ -283,6 +286,8 @@ public final class PlaybackSession {
         recoveries = 0;
         divergenceSince = 0L;
         lastSeekAt = System.currentTimeMillis();
+        resyncing = true;
+        resyncSince = System.currentTimeMillis();
         // Everything the decoder produced sits at the *previous* position, so drop it right now
         // instead of waiting for the decode thread to notice: stale frames must not keep the
         // screen "ready" (which would also keep the old audio instance alive).
@@ -335,6 +340,8 @@ public final class PlaybackSession {
         boolean needsFreshStream = !rangeOk
                 && (target < lastDecodedTs - 0.5 || ended || failed);
         lastSeekAt = System.currentTimeMillis();
+        resyncing = true;
+        resyncSince = System.currentTimeMillis();
         ZCinemaLog.log("seek", "request screen=%s target=%.3fs from=%.3fs rangeOk=%s ended=%s failed=%s "
                         + "freshStream=%s", pos.toShortString(), target, mediaSeconds(), rangeOk, ended,
                 failed, needsFreshStream);
@@ -575,6 +582,7 @@ public final class PlaybackSession {
                         ZCinemaLog.log("seek", "landed target=%.3fs firstFrame=%.3fs took=%dms",
                                 seekLandedTarget, ts, System.currentTimeMillis() - seekAppliedAt);
                         seekLandedTarget = Double.NaN;
+                        resyncing = false;
                     }
 
                     while (!isRetired(generation)) {
@@ -667,6 +675,7 @@ public final class PlaybackSession {
             if (queue.isEmpty()) return;
             bufferReady = true;
             rebuffering = false;
+            resyncing = false;
             progress = 0.95F;
             ZCinema.LOGGER.debug("Screen {} buffered {}s and is ready", pos,
                     String.format(java.util.Locale.ROOT, "%.3f", bufferedSeconds()));
@@ -817,11 +826,11 @@ public final class PlaybackSession {
         double audioError = Double.isNaN(audioPosition) ? Double.NaN : audioPosition - media;
         ZCinemaLog.log("state", "screen=%s shared=%.3fs media=%.3fs itemStart=%+.3fs drift=%+.3fs "
                         + "videoErr=%s audioErr=%s frame=%s buf=%d/%s ready=%s rebuf=%s seeking=%s "
-                        + "playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s",
+                        + "resyncing=%s playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s",
                 pos.toShortString(), targetSeconds(), media, itemStartSeconds, media - targetSeconds(),
                 fmt(videoError), fmt(audioError), fmt(displayedTs), buffered, fmt(bufferedSeconds()),
-                bufferReady, rebuffering, seeking(), be.clientPlaying(), be.clientFrozen(), clockMoving,
-                failed, ended, rangeOk);
+                bufferReady, rebuffering, seeking(), resyncing, be.clientPlaying(), be.clientFrozen(),
+                clockMoving, failed, ended, rangeOk);
     }
 
     private static String fmt(double value) {
@@ -837,11 +846,18 @@ public final class PlaybackSession {
      */
     private void applyServerAnchor() {
         if (closed || failed || ended) return;
+        long now = System.currentTimeMillis();
+        if (resyncing) {
+            // Do not stack repositions: the one in flight will land (or has failed).
+            if (now - resyncSince < 15_000L) return;
+            ZCinemaLog.log("clock", "resync watchdog screen=%s: no landing after %dms, retrying",
+                    pos.toShortString(), now - resyncSince);
+            resyncing = false;
+        }
         double anchor = targetSeconds();
         double local = Double.isNaN(displayedTs) ? lastDecodedTs : displayedTs;
         if (Double.isNaN(local)) return;
         double diff = local - anchor;
-        long now = System.currentTimeMillis();
         if (Math.abs(diff) < hardResyncSeconds()) {
             divergenceSince = 0L;
             return;
@@ -852,8 +868,10 @@ public final class PlaybackSession {
                     pos.toShortString(), anchor, local, diff);
             return;
         }
-        // Only act when the divergence persists: a single late frame is normal.
-        if (now - divergenceSince < 500L || seeking() || now - lastSeekAt < 1_000L) return;
+        // Only act when the divergence persists: a single late frame is normal. Note this must
+        // not use seeking(): that also reports true for every recent seek or rebuffer, which
+        // used to block the reposition for 20s and left slow machines fast-forward-decoding.
+        if (now - divergenceSince < 500L || now - lastSeekAt < 1_000L) return;
         ZCinemaLog.log("clock", "reposition screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs "
                         + "sustained=%dms",
                 pos.toShortString(), anchor, local, diff, now - divergenceSince);
