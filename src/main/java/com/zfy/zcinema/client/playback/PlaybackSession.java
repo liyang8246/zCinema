@@ -261,13 +261,30 @@ public final class PlaybackSession {
         ended = false;
         errorMessage = null;
         recoveries = 0;
-        ZCinema.LOGGER.debug("Screen {} resynced to the shared clock: was {}s, now {}s (delta {}s)",
+        lastSeekAt = System.currentTimeMillis();
+        // The shared clock jumped. Everything the decoder produced sits at the *previous*
+        // position, so drop it right now instead of waiting for the decode thread to notice:
+        // stale frames must not keep the screen "ready" (which would also keep the old audio
+        // instance alive) and must not be shown against the new clock.
+        clearQueue(true);
+        ScreenAudio.stop(pos);
+        ZCinema.LOGGER.info("Screen {} jumped to the shared clock: was {}s, now {}s (delta {}s)",
                 pos, String.format(java.util.Locale.ROOT, "%.3f", current),
                 String.format(java.util.Locale.ROOT, "%.3f", target),
                 String.format(java.util.Locale.ROOT, "%+.3f", diff));
         Thread thread = decodeThread;
         if (thread == null || !thread.isAlive()) {
             // The stream is gone (it blew up and was cleared by an earlier failure): reopen it.
+            openDecoder(target);
+            return;
+        }
+        if (!rangeOk && target < lastDecodedTs - 0.5) {
+            // A source without Range can only ever move forward, so a rewind needs a fresh
+            // connection. Letting the decoder "catch up" would park it forever, because the
+            // frame it holds is ahead of the new clock.
+            ZCinema.LOGGER.info("Screen {} rewinds to {}s: reopening the stream because the "
+                    + "source has no Range support", pos,
+                    String.format(java.util.Locale.ROOT, "%.3f", target));
             openDecoder(target);
             return;
         }
@@ -294,6 +311,11 @@ public final class PlaybackSession {
         double target = Math.max(0.0, duration > 0.0 ? Math.min(targetSeconds, duration - 0.1) : targetSeconds);
         boolean needsFreshStream = !rangeOk
                 && (target < lastDecodedTs - 0.5 || ended || failed);
+        lastSeekAt = System.currentTimeMillis();
+        // The user is moving the timeline: the old picture and sound belong to the old position,
+        // so drop both at once instead of letting them play until the decoder thread reacts.
+        clearQueue(true);
+        ScreenAudio.stop(pos);
         if (ended || failed || needsFreshStream) {
             // Its decoder already stopped, or rewinding needs a stream that can only move
             // forward: start it again straight at the new position.
@@ -301,7 +323,6 @@ public final class PlaybackSession {
             failed = false;
             errorMessage = null;
             recoveries = 0;
-            lastSeekAt = System.currentTimeMillis();
             if (needsFreshStream) {
                 ZCinema.LOGGER.info("Screen {} rewinds to {}s: reopening the stream from the start "
                         + "because the source has no Range support", pos,
@@ -311,7 +332,6 @@ public final class PlaybackSession {
             return;
         }
         pendingSeek = target;
-        lastSeekAt = System.currentTimeMillis();
     }
 
     public void close() {
@@ -428,9 +448,17 @@ public final class PlaybackSession {
                                 grabber.setTimestamp((long) (target * 1_000_000.0));
                                 timestampOrigin = Double.NaN;
                                 timestampTarget = target;
-                                ZCinema.LOGGER.debug("Screen {} seeks its stream to {}s", pos, target);
+                                ZCinema.LOGGER.info("Screen {} seeks its stream to {}s", pos,
+                                        String.format(java.util.Locale.ROOT, "%.3f", target));
                             } catch (Exception error) {
-                                ZCinema.LOGGER.debug("Seek to {}s failed for {}", target, url, error);
+                                // The connection refused to reposition. Continuing from the old
+                                // position would leave the decoder ahead of the new clock (or
+                                // decoding through minutes of video), so start a fresh stream.
+                                ZCinema.LOGGER.warn("Screen {} could not seek to {}s, reopening the "
+                                        + "stream", pos,
+                                        String.format(java.util.Locale.ROOT, "%.3f", target), error);
+                                openDecoder(target);
+                                continue;
                             }
                         } else {
                             // No Range support: the connection can only ever move forward, so a
@@ -491,6 +519,10 @@ public final class PlaybackSession {
                     lastDecodedTs = ts;
 
                     while (!isRetired(generation)) {
+                        // A new seek outranks waiting for the clock: the shared clock may have
+                        // jumped backwards, in which case this frame's position would never be
+                        // reached again and the loop would sleep here forever.
+                        if (!Double.isNaN(pendingSeek)) break;
                         if (ts <= mediaSeconds() + maxBuffer) break;
                         decodeHeartbeat = System.currentTimeMillis();
                         Thread.sleep(4L);
@@ -686,6 +718,9 @@ public final class PlaybackSession {
         }
 
         applyServerAnchor();
+        // The anchor may have jumped (a seek): the audio controller has to compare against where
+        // the media timeline is NOW, not against the pre-resync value read above.
+        media = mediaSeconds();
         reportHealth();
         ScreenAudio.update(this, media);
     }
