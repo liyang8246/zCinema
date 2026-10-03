@@ -7,6 +7,7 @@ import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.core.BlockPos;
 import com.zfy.zcinema.net.ModNetworking;
 
@@ -144,6 +145,19 @@ public final class ClientPlayback {
     }
 
     /**
+     * Round trip to the server as the vanilla player list knows it. The snapshot carries the
+     * position as of its send moment, so half of this is added back when extrapolating; otherwise
+     * every client would permanently sit one one-way delay behind the server timeline (and the
+     * host client, which receives instantly).
+     */
+    private static long localLatencyMillis() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.getConnection() == null || minecraft.player == null) return 0L;
+        PlayerInfo info = minecraft.getConnection().getPlayerInfo(minecraft.player.getUUID());
+        return info == null ? 0L : info.getLatency();
+    }
+
+    /**
      * Rewrites the shared timeline at {@code seconds}. We send the event first so the server owns
      * the new position, and tell our own decoder to seek right away so it does not decode through
      * everything in between.
@@ -167,8 +181,8 @@ public final class ClientPlayback {
         CinemaScreenBlockEntity be = find(packet.pos());
         if (be == null) return;
         be.applyClientState(packet.url(), packet.positionMs(), packet.playing(), packet.frozen(),
-                packet.durationMs(), packet.hasArea(), packet.minX(), packet.minY(), packet.minZ(), packet.maxX(),
-                packet.maxY(), packet.maxZ(), packet.normal());
+                packet.durationMs(), localLatencyMillis(), packet.hasArea(), packet.minX(), packet.minY(),
+                packet.minZ(), packet.maxX(), packet.maxY(), packet.maxZ(), packet.normal());
         // Stop a session that was playing the previous link right away: the renderer would replace
         // it on the next frame anyway, but until then its tick could report the old film's
         // duration (or health) for the new one.

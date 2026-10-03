@@ -470,6 +470,19 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     // =============================== client mirror ===============================
 
     public void applyClientState(String url, long positionMs, boolean playing, boolean frozen, long durationMs) {
+        applyClientState(url, positionMs, playing, frozen, durationMs, 0L);
+    }
+
+    /**
+     * @param latencyMs round trip to the server when this snapshot arrived. The position was
+     *                  computed one one-way delay before reception, so extrapolating from receipt
+     *                  alone would leave this client exactly that far behind the server (and the
+     *                  host client, which sees packets with ~0 latency). Half of the measured ping
+     *                  is added back, which lines every client up with the shared timeline as the
+     *                  server sees it. Cross-machine wall clocks are never compared.
+     */
+    public void applyClientState(String url, long positionMs, boolean playing, boolean frozen, long durationMs,
+                                 long latencyMs) {
         double expected = clientPositionSeconds();
         String previousUrl = netUrl;
         boolean previousPlaying = netPlaying;
@@ -480,23 +493,23 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         this.netPlaying = playing;
         this.netFrozen = frozen;
         this.netDurationMs = durationMs;
-        this.netAtMs = System.currentTimeMillis();
-        double delta = this.netPositionMs / 1000.0 - expected;
+        this.netAtMs = System.currentTimeMillis() - Math.max(0L, Math.min(4_000L, latencyMs)) / 2L;
+        double delta = expected - this.netPositionMs / 1000.0;
         if (!previousUrl.equals(this.netUrl) || previousPlaying != playing || previousFrozen != frozen
                 || Math.abs(delta) > 1.0 || Math.abs(durationMs - previousDuration * 1000.0) > 500.0) {
             ZCinemaLog.log("clock", "snapshot screen=%s expected=%.3fs got=%.3fs delta=%+.3fs "
-                            + "playing=%s->%s frozen=%s->%s duration=%.3fs url=%s",
+                            + "playing=%s->%s frozen=%s->%s duration=%.3fs latency=%dms url=%s",
                     getBlockPos().toShortString(), expected, this.netPositionMs / 1000.0, delta,
-                    previousPlaying, playing, previousFrozen, frozen, durationMs / 1000.0,
+                    previousPlaying, playing, previousFrozen, frozen, durationMs / 1000.0, latencyMs,
                     this.netUrl.isEmpty() ? "<empty>" : ZCinemaLog.shorten(this.netUrl, 200));
         }
     }
 
     /** Applies a full state snapshot (playback + screen geometry). */
     public void applyClientState(String url, long positionMs, boolean playing, boolean frozen, long durationMs,
-                                 boolean hasArea, long minX, long minY, long minZ, long maxX, long maxY, long maxZ,
-                                 int normal) {
-        applyClientState(url, positionMs, playing, frozen, durationMs);
+                                 long latencyMs, boolean hasArea, long minX, long minY, long minZ, long maxX,
+                                 long maxY, long maxZ, int normal) {
+        applyClientState(url, positionMs, playing, frozen, durationMs, latencyMs);
         if (hasArea) {
             this.netMin = new BlockPos((int) minX, (int) minY, (int) minZ);
             this.netMax = new BlockPos((int) maxX, (int) maxY, (int) maxZ);
@@ -604,6 +617,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
             applyClientState(tag.getString("ClientUrl"), tag.getLong("ClientPositionMs"),
                     tag.getBoolean("ClientPlaying"), tag.getBoolean("ClientFrozen"),
                     tag.getLong("ClientDurationMs"),
+                    0L,
                     hasArea,
                     hasArea ? screenMin.getX() : 0, hasArea ? screenMin.getY() : 0, hasArea ? screenMin.getZ() : 0,
                     hasArea ? screenMax.getX() : 0, hasArea ? screenMax.getY() : 0, hasArea ? screenMax.getZ() : 0,
