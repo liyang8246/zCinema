@@ -174,23 +174,75 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + 1, 0xFF3C3C3C);
     }
 
-    /** Slider that only commits on release, so dragging never spams the shared timeline. */
+    /**
+     * Slider that only commits on release, so dragging never spams the shared timeline.
+     *
+     * <p>The commit is owned by the press-release pair, not by drag events: the mouse handler
+     * aggregates movement per frame, so a fast flick can go press-move-release without ever
+     * delivering an {@code onDrag}. Relying on those events let the per-tick refresh yank the
+     * handle back to the old position before the release committed it, and the seek then went to
+     * the position the film was already at - a drag that visibly did nothing.
+     *
+     * <p>After a commit the handle also holds the position the user picked until the shared clock
+     * has actually caught up with it (a couple of seconds at most), so the round trip to the
+     * server cannot make it look like the drag failed.
+     */
     private class SeekSlider extends AbstractSliderButton {
-        private boolean dragging;
+        private static final long HOLD_MILLIS = 2_000L;
+
+        /** True from the mouse going down on the slider until the seek is committed. */
+        private boolean pressed;
+        /** Value we last asked the server to play, held on screen until the clock arrives there. */
+        private double committedValue = Double.NaN;
+        private long committedAt;
 
         SeekSlider(int x, int y, int width, int height) {
             super(x, y, width, height, Component.empty(), 0.0);
         }
 
         void refresh() {
-            if (!this.dragging && screen != null) {
-                double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
-                double master = ClientPlayback.displaySeconds(screen.getBlockPos());
-                this.value = duration > 0
-                        ? Mth.clamp(master / duration, 0.0, 1.0)
-                        : 0.0;
-                this.updateMessage();
+            if (screen == null) return;
+            if (this.pressed && !minecraft.mouseHandler.isLeftPressed()) {
+                // The release was never delivered to this widget (it landed outside the window or
+                // the focus moved): commit what the user picked instead of leaving it hanging.
+                commit();
             }
+            if (this.pressed) return; // the user owns the handle while the mouse is down
+            if (holdingCommit()) return; // the seek we just sent owns it until the clock arrives
+            double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
+            double master = ClientPlayback.displaySeconds(screen.getBlockPos());
+            this.value = duration > 0
+                    ? Mth.clamp(master / duration, 0.0, 1.0)
+                    : 0.0;
+            this.updateMessage();
+        }
+
+        /** True while the handle stays where the user dropped it, waiting for the timeline. */
+        private boolean holdingCommit() {
+            if (Double.isNaN(this.committedValue)) return false;
+            if (System.currentTimeMillis() - this.committedAt > HOLD_MILLIS) {
+                this.committedValue = Double.NaN;
+                return false;
+            }
+            double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
+            double master = ClientPlayback.displaySeconds(screen.getBlockPos());
+            if (duration > 0 && Math.abs(master - this.committedValue * duration) < 0.5) {
+                this.committedValue = Double.NaN;
+                return false;
+            }
+            return true;
+        }
+
+        /** Commits the current handle position as a seek for everyone. */
+        private void commit() {
+            if (!this.pressed) return;
+            this.pressed = false;
+            if (screen == null) return;
+            double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
+            if (duration <= 0.0) return;
+            this.committedValue = this.value;
+            this.committedAt = System.currentTimeMillis();
+            ClientPlayback.seek(screen.getBlockPos(), this.value * duration);
         }
 
         @Override
@@ -206,21 +258,29 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         }
 
         @Override
+        public void onClick(MouseButtonEvent event, boolean doubleClick) {
+            this.pressed = true;
+            super.onClick(event, doubleClick);
+        }
+
+        @Override
         protected void onDrag(MouseButtonEvent event, double mouseX, double mouseY) {
+            this.pressed = true;
             super.onDrag(event, mouseX, mouseY);
-            this.dragging = true;
         }
 
         @Override
         public void onRelease(MouseButtonEvent event) {
-            this.dragging = false;
-            if (screen != null) {
-                double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
-                if (duration > 0.0) {
-                    ClientPlayback.seek(screen.getBlockPos(), this.value * duration);
-                }
-            }
+            commit();
             super.onRelease(event);
+        }
+
+        @Override
+        public void setFocused(boolean focused) {
+            super.setFocused(focused);
+            // Focus can move away mid-gesture (another widget clicked, the panel closing): commit
+            // what the user picked instead of holding the handle hostage.
+            if (!focused) commit();
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.zfy.zcinema.client.audio;
 
 import com.zfy.zcinema.ZCinema;
+import com.zfy.zcinema.client.playback.SourceResolver;
 import net.minecraft.client.sounds.AudioStream;
 
 import javax.sound.sampled.AudioFormat;
@@ -61,6 +62,7 @@ public final class StreamAudio implements AudioStream {
         try {
             opened = new org.bytedeco.javacv.FFmpegFrameGrabber(url);
             opened.setVideoStream(-1);
+            SourceResolver.applyStreamOptions(opened, url);
             opened.start();
             double resolvedDuration = opened.getLengthInTime() / 1_000_000.0;
             // A streamed source often reports the length of what it has read so far, which would

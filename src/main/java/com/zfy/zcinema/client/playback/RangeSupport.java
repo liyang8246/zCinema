@@ -25,10 +25,10 @@ final class RangeSupport {
 
     private RangeSupport() {}
 
-    static boolean supports(String url) {
-        return CACHE.computeIfAbsent(url, key -> {
-            boolean supported = probe(key);
-            if (!supported) warnOnce(key);
+    static boolean supports(String key, String probeUrl) {
+        return CACHE.computeIfAbsent(key, cacheKey -> {
+            boolean supported = probe(probeUrl);
+            if (!supported) warnOnce(cacheKey);
             return supported;
         });
     }
@@ -41,7 +41,10 @@ final class RangeSupport {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(10))
-                    .header("User-Agent", "Mozilla/5.0 (Z Cinema)")
+                    // Ask with the same identity the decoders will use: a CDN that rejects
+                    // FFmpeg's default user agent would otherwise look like a no-Range server.
+                    .header("User-Agent", SourceResolver.USER_AGENT)
+                    .header("Referer", SourceResolver.refererFor(url))
                     .header("Range", "bytes=0-0")
                     .GET()
                     .build();

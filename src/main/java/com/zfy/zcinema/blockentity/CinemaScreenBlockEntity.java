@@ -242,12 +242,16 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
                 dirty = true;
             }
             case SEEK -> {
-                this.positionMs = clamp(Math.max(0L, positionMs));
+                long target = clamp(Math.max(0L, positionMs));
+                this.positionMs = target;
                 playing = true;
                 frozen = false;
                 anchorMs = System.currentTimeMillis();
                 resetPlaybackHealth();
                 dirty = true;
+                ZCinema.LOGGER.info("Screen {} seeked to {}s by {}", getBlockPos(),
+                        String.format(java.util.Locale.ROOT, "%.3f", target / 1000.0),
+                        player.getName().getString());
             }
             case REMOVE -> {
                 url = "";

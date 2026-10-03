@@ -100,6 +100,12 @@ public final class PlaybackSession {
     private volatile boolean clockMoving;
     /** Timestamp of the newest frame our decoder produced (used to decide how to seek). */
     private volatile double lastDecodedTs = Double.NaN;
+    /**
+     * Whether the resolved stream honours HTTP Range. The decoder thread finds out while opening
+     * the stream (probing the resolved link, not the parsing API that stands in front of it);
+     * until then we assume Range, because a rewind cannot happen before anything is decoded.
+     */
+    private volatile boolean rangeOk = true;
 
     private volatile double pendingSeek = Double.NaN;
     private long lastSeekAt;
@@ -186,7 +192,7 @@ public final class PlaybackSession {
 
     /** True when the source honours HTTP Range, so seeking is instant. */
     public boolean rangeSupported() {
-        return RangeSupport.supports(url);
+        return rangeOk;
     }
 
     /** True while this client is repositioning its stream (a seek, or catching up after one). */
@@ -286,7 +292,7 @@ public final class PlaybackSession {
     public void requestSeek(double targetSeconds) {
         if (closed) return;
         double target = Math.max(0.0, duration > 0.0 ? Math.min(targetSeconds, duration - 0.1) : targetSeconds);
-        boolean needsFreshStream = !RangeSupport.supports(url)
+        boolean needsFreshStream = !rangeOk
                 && (target < lastDecodedTs - 0.5 || ended || failed);
         if (ended || failed || needsFreshStream) {
             // Its decoder already stopped, or rewinding needs a stream that can only move
@@ -369,6 +375,7 @@ public final class PlaybackSession {
             grabber = new FFmpegFrameGrabber(source);
             grabber.setImageMode(FrameGrabber.ImageMode.RAW);
             configure(grabber);
+            SourceResolver.applyStreamOptions(grabber, source);
             grabber.start();
             if (isRetired(generation)) return;
             progress = 0.18F;
@@ -384,8 +391,11 @@ public final class PlaybackSession {
                     : Math.max(0.0, startSeconds);
 
             double timestampTarget = 0.0;
-            boolean rangeOk = RangeSupport.supports(url);
-            if (requestedStart > 0.25 && rangeOk) {
+            // Ask about the *resolved* link: a parsing API in front of a CDN would otherwise look
+            // like the thing that has to honour Range, and its redirect answer usually does not.
+            boolean canSeek = RangeSupport.supports(url, source);
+            rangeOk = canSeek;
+            if (requestedStart > 0.25 && canSeek) {
                 try {
                     grabber.setTimestamp((long) (requestedStart * 1_000_000.0));
                     timestampTarget = requestedStart;
@@ -413,7 +423,7 @@ public final class PlaybackSession {
                                 : Math.max(0.0, pendingSeek);
                         pendingSeek = Double.NaN;
                         clearQueue(true);
-                        if (rangeOk) {
+                        if (canSeek) {
                             try {
                                 grabber.setTimestamp((long) (target * 1_000_000.0));
                                 timestampOrigin = Double.NaN;
@@ -461,7 +471,7 @@ public final class PlaybackSession {
                             continue;
                         }
                         lastRecoveryAt = System.currentTimeMillis();
-                        if (!rangeOk || ++recoveries > MAX_EOF_RECOVERIES) {
+                        if (!canSeek || ++recoveries > MAX_EOF_RECOVERIES) {
                             throw new IOException("stream ended early at "
                                     + String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()) + "s");
                         }

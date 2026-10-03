@@ -27,11 +27,11 @@ import java.util.regex.Pattern;
  * <p>Results are cached, because CDN addresses are signed and expire: after the cache lifetime
  * the link is resolved again, which is also what happens when a stream stops working.
  */
-final class SourceResolver {
+public final class SourceResolver {
     private static final long CACHE_MILLIS = 20 * 60 * 1000L;
     private static final int MAX_HOPS = 5;
     private static final int MAX_BODY_BYTES = 512 * 1024;
-    private static final String USER_AGENT =
+    static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                     + "Chrome/131.0.0.0 Safari/537.36";
     private static final Pattern MEDIA_PATH = Pattern.compile(
@@ -110,7 +110,8 @@ final class SourceResolver {
                     return current;
                 }
                 // Not media: the body may be JSON (or a page) that names the real address.
-                String body = readBody(response.body());
+                // JSON payloads often escape the slashes of their URLs, pages escape ampersands.
+                String body = readBody(response.body()).replace("\\/", "/").replace("&amp;", "&");
                 Matcher matcher = MEDIA_URL.matcher(body);
                 if (matcher.find()) {
                     current = matcher.group();
@@ -143,10 +144,27 @@ final class SourceResolver {
         }
     }
 
-    private static String refererFor(String url) {
+    static String refererFor(String url) {
         // Bilibili's CDNs are picky about who asks for their files.
-        return url.contains("bilibili.com") || url.contains("bilivideo.com")
-                ? "https://www.bilibili.com/" : "https://" + hostOf(url) + "/";
+        return isBilibili(url) ? "https://www.bilibili.com/" : "https://" + hostOf(url) + "/";
+    }
+
+    private static boolean isBilibili(String url) {
+        return url.contains("bilibili.com") || url.contains("bilivideo.com");
+    }
+
+    /**
+     * The video and audio decoders open the resolved link themselves, so they have to knock on the
+     * CDN's door with the same identity this resolver used: plenty of hosts answer FFmpeg's
+     * default "Lavf/..." user agent with a 403, and Bilibili's CDNs additionally want the site as
+     * referer - without this, a perfectly resolvable parsing API still ends in "failed to stream".
+     */
+    public static void applyStreamOptions(org.bytedeco.javacv.FFmpegFrameGrabber grabber, String url) {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return;
+        grabber.setOption("user_agent", USER_AGENT);
+        if (isBilibili(url)) {
+            grabber.setOption("headers", "Referer: " + refererFor(url) + "\r\n");
+        }
     }
 
     private static String hostOf(String url) {
