@@ -1,7 +1,6 @@
 {
   "pack": {
     "description": "Z Cinema resources",
-    "min_format": 82,
-    "max_format": 999
+    "pack_format": 34
   }
 }
