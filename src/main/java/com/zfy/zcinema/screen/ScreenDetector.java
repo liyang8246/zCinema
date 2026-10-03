@@ -16,8 +16,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Multi-block screen detection: flood-fill the connected run of black concrete (and existing
- * cores) around a position, confirm it is a flat wall and shrink it to its bounding rectangle.
+ * Multi-block screen detection: flood-fill the connected run of black concrete (and the screen
+ * blocks a registered wall has become) around a position, confirm it is a flat wall and shrink it
+ * to its bounding rectangle.
  */
 public final class ScreenDetector {
     private static final int MAX_SCAN = 16_384;
@@ -25,11 +26,11 @@ public final class ScreenDetector {
     private ScreenDetector() {}
 
     public static boolean isScreenMaterial(BlockState state) {
-        return state.is(Blocks.BLACK_CONCRETE) || state.is(ModBlocks.SCREEN_CORE.get());
+        return state.is(Blocks.BLACK_CONCRETE) || state.is(ModBlocks.SCREEN.get());
     }
 
     /**
-     * @param origin  a block that is part of the screen (concrete or an existing core)
+     * @param origin  a block that is part of the screen (concrete or a screen block)
      * @param hitFace the block face the player clicked, used to decide which way the screen faces
      * @param player  where the player stood, used as a fallback when the hit face is ambiguous
      */

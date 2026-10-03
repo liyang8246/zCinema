@@ -26,22 +26,29 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The heart of a multi-block screen. Visually it is black concrete (same model, same drops);
- * the block entity it carries remembers the rectangle of concrete that forms the screen.
+ * One block of a cinema screen.
  *
- * <p>A stick is required for every screen gesture, which {@link com.zfy.zcinema.event.PlayerInteractEvents}
- * enforces: sneak + right-click a concrete area with a stick to turn it into a core (the mod
- * auto-detects the connected flat rectangle), the same gesture opens the control panel, and a
- * plain stick right-click on the core takes the screen down again. Without a stick this block
- * behaves exactly like black concrete.
+ * <p>Registering a black concrete wall turns <em>every</em> block of the rectangle into this block;
+ * the wall and the screen are then the same thing, and there is no hidden "core" carved out of it.
+ * It is deliberately indistinguishable from black concrete - same model and texture, same hardness
+ * and sound, same drops (copied from the vanilla block) and the same pick-block result - so an idle
+ * screen simply looks like the dark wall it replaced.
+ *
+ * <p>The playback state lives in the block entity of one of these blocks (whichever block was used
+ * to register the screen). Every other block of the screen also carries an empty block entity; the
+ * server tick ignores those, and the renderer only draws the one that actually knows a rectangle.
+ * A stick is required for every screen gesture, which
+ * {@link com.zfy.zcinema.event.PlayerInteractEvents} enforces: sneak + right-click concrete to
+ * register the wall, sneak + right-click a screen to open its panel. Taking the screen down is a
+ * button in that panel - no world gesture can do it by accident.
  */
-public class ScreenCoreBlock extends Block implements EntityBlock {
-    public static final MapCodec<ScreenCoreBlock> CODEC = simpleCodec(ScreenCoreBlock::new);
+public class ScreenBlock extends Block implements EntityBlock {
+    public static final MapCodec<ScreenBlock> CODEC = simpleCodec(ScreenBlock::new);
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 
     private static final VoxelShape SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0);
 
-    public ScreenCoreBlock(Properties properties) {
+    public ScreenBlock(Properties properties) {
         super(properties);
         registerDefaultState(getStateDefinition().any().setValue(FACING, net.minecraft.core.Direction.NORTH));
     }

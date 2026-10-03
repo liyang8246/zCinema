@@ -3,10 +3,8 @@ package com.zfy.zcinema;
 import com.mojang.logging.LogUtils;
 import com.zfy.zcinema.config.CommonConfig;
 import com.zfy.zcinema.registry.ModBlocks;
-import com.zfy.zcinema.registry.ModItems;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.registry.ModMenus;
-import com.zfy.zcinema.registry.ModCreativeTabs;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -24,10 +22,8 @@ public class ZCinema {
 
     public ZCinema(IEventBus modEventBus, ModContainer modContainer) {
         ModBlocks.BLOCKS.register(modEventBus);
-        ModItems.ITEMS.register(modEventBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
         ModMenus.MENUS.register(modEventBus);
-        ModCreativeTabs.CREATIVE_TABS.register(modEventBus);
 
         modContainer.registerConfig(ModConfig.Type.COMMON, CommonConfig.SPEC);
 

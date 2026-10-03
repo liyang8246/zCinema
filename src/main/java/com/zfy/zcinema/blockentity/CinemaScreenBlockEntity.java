@@ -6,7 +6,6 @@ import com.zfy.zcinema.gui.CinemaScreenMenu;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.screen.ScreenArea;
-import com.zfy.zcinema.screen.ScreenDetector;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -99,7 +98,6 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     private long healthySince;
 
     private int syncCounter;
-    private int validateCounter = 20;
     private boolean dirty;
 
     public CinemaScreenBlockEntity(BlockPos pos, BlockState state) {
@@ -108,7 +106,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
 
     // =============================== screen geometry ===============================
 
-    /** Stores a freshly detected rectangle (called once, when the core is created). */
+    /** Stores a freshly detected rectangle (called once, when the screen is registered). */
     public void setScreenArea(ScreenArea area) {
         this.screenMin = area.min();
         this.screenMax = area.max();
@@ -138,43 +136,51 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     }
 
     /**
-     * Keeps the rectangle honest: if players broke concrete out of the wall, the screen shrinks
-     * to whatever is still connected.
+     * Takes the screen down: every screen block of the rectangle becomes plain black concrete
+     * again and the playback state is dropped. Used by the panel's remove button and when a block
+     * of the wall is broken - the size itself is only ever detected once, when the screen is
+     * registered.
      */
-    private void validateScreenArea() {
-        if (!hasScreenArea() || level == null || level.isClientSide()) return;
-        boolean intact = true;
+    public void dissolveScreen() {
+        if (level == null || level.isClientSide() || !hasScreenArea()) return;
+        ScreenArea area = new ScreenArea(screenMin, screenMax, screenNormal);
+        // Say goodbye while this block entity still exists, so viewers stop their sessions right
+        // away instead of waiting for the block updates to sweep the entity away.
+        url = "";
+        playing = false;
+        frozen = false;
+        positionMs = 0L;
+        durationMs = 0L;
+        anchorMs = System.currentTimeMillis();
+        broadcastState();
+        screenMin = null;
+        screenMax = null;
+        resetPlaybackHealth();
+        dirty = false;
+        setChanged();
+
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int x = screenMin.getX(); x <= screenMax.getX() && intact; x++) {
-            for (int y = screenMin.getY(); y <= screenMax.getY() && intact; y++) {
-                for (int z = screenMin.getZ(); z <= screenMax.getZ() && intact; z++) {
+        for (int x = area.min().getX(); x <= area.max().getX(); x++) {
+            for (int y = area.min().getY(); y <= area.max().getY(); y++) {
+                for (int z = area.min().getZ(); z <= area.max().getZ(); z++) {
                     cursor.set(x, y, z);
-                    if (!ScreenDetector.isScreenMaterial(level.getBlockState(cursor))) {
-                        intact = false;
-                        break;
+                    if (level.getBlockState(cursor).is(com.zfy.zcinema.registry.ModBlocks.SCREEN.get())) {
+                        level.setBlockAndUpdate(cursor,
+                                net.minecraft.world.level.block.Blocks.BLACK_CONCRETE.defaultBlockState());
                     }
                 }
             }
         }
-        if (intact) return;
-        if (level.getBlockState(getBlockPos()).is(com.zfy.zcinema.registry.ModBlocks.SCREEN_CORE.get())) {
-            // Keep the rectangle honest using the side the core itself faces.
-            Direction facing = getBlockState().getOptionalValue(
-                    com.zfy.zcinema.block.ScreenCoreBlock.FACING).orElse(screenNormal);
-            ScreenArea area = ScreenDetector.detect(level, getBlockPos(), facing.getOpposite(),
-                    Vec3.atBottomCenterOf(getBlockPos()).add(0.0, 1.0, 0.0));
-            if (area != null) setScreenArea(area);
-        }
+        ZCinema.LOGGER.info("Screen {} was taken down, its wall is black concrete again", getBlockPos());
     }
 
     // =============================== server side ===============================
 
     public void serverTick() {
         if (level == null || level.isClientSide()) return;
-        if (validateCounter-- <= 0) {
-            validateCounter = 20; // once per second is plenty for self-healing
-            validateScreenArea();
-        }
+        // Every block of a screen carries a block entity, but only the one that knows a rectangle
+        // is in charge: the rest are inert and just wait to be part of the picture.
+        if (!hasScreenArea()) return;
         evaluatePlaybackHealth();
         if (playing && !frozen) {
             long effective = effectivePositionMs();
@@ -254,18 +260,8 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
                         player.getName().getString());
             }
             case REMOVE -> {
-                url = "";
-                playing = false;
-                frozen = false;
-                positionMs = 0L;
-                anchorMs = System.currentTimeMillis();
-                durationMs = 0L;
-                resetPlaybackHealth();
-                dirty = true;
-                if (level != null) {
-                    level.setBlockAndUpdate(getBlockPos(),
-                            net.minecraft.world.level.block.Blocks.BLACK_CONCRETE.defaultBlockState());
-                }
+                dissolveScreen();
+                player.displayClientMessage(Component.translatable("message.zcinema.removed"), true);
             }
         }
         setChanged();
@@ -410,7 +406,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     }
 
     public void broadcastState() {
-        if (level == null || level.isClientSide()) return;
+        if (level == null || level.isClientSide() || !hasScreenArea()) return;
         ScreenArea area = screenArea();
         Vec3 center = area != null ? area.centerOutward(4.0) : Vec3.atCenterOf(getBlockPos());
         S2CStatePacket packet = new S2CStatePacket(getBlockPos(), url, effectivePositionMs(), playing, frozen,
@@ -435,8 +431,8 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
 
     public boolean canControl(Player player) {
         if (level == null) return false;
-        // Measuring to the core alone would close the panel the moment somebody uses it from the
-        // far side of a big screen, so measure to the screen itself.
+        // Measuring to the state-carrying block alone would close the panel the moment somebody
+        // uses it from the far side of a big screen, so measure to the screen itself.
         ScreenArea area = screenArea();
         if (area == null) return player.distanceToSqr(Vec3.atCenterOf(getBlockPos())) <= CONTROL_RANGE_SQR;
         net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
@@ -483,6 +479,14 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
 
     public String clientUrl() {
         return netUrl;
+    }
+
+    /**
+     * The URL this block entity owns on the server. The client mirror is empty there, so anything
+     * running server-side (the chunk-watch push) has to read this one.
+     */
+    public String serverUrl() {
+        return url;
     }
 
     public boolean clientPlaying() {

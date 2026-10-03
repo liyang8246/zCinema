@@ -1,6 +1,5 @@
 {
-  "block.zcinema.screen_core": "屏幕核心",
-  "itemGroup.zcinema": "Z 放映厅",
+  "block.zcinema.screen": "屏幕方块",
   "container.zcinema.screen": "放映屏幕",
 
   "message.zcinema.created": "已识别 %1$sx%2$s 的屏幕区域",
@@ -12,7 +11,6 @@
   "gui.zcinema.play": "播放",
   "gui.zcinema.pause": "暂停",
   "gui.zcinema.remove": "撤下屏幕",
-  "gui.zcinema.hint": "木棍+潜行+右键识别墙壁或打开面板；木棍右键核心块撤下；同一链接全员同步播放。",
   "gui.zcinema.status.idle": "粘贴 MP4 直链或解析链接，然后点击“载入”",
   "gui.zcinema.status.loading": "缓冲中…",
   "gui.zcinema.status.seeking": "定位中…",

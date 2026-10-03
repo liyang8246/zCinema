@@ -14,8 +14,8 @@ public final class ModBlockEntities {
             DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ZCinema.MODID);
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CinemaScreenBlockEntity>> SCREEN_BE =
-            BLOCK_ENTITIES.register("screen_core", () -> new BlockEntityType<>(
-                    CinemaScreenBlockEntity::new, Set.of(ModBlocks.SCREEN_CORE.get())));
+            BLOCK_ENTITIES.register("screen", () -> new BlockEntityType<>(
+                    CinemaScreenBlockEntity::new, Set.of(ModBlocks.SCREEN.get())));
 
     private ModBlockEntities() {}
 }

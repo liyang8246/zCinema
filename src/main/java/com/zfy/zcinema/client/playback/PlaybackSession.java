@@ -155,7 +155,7 @@ public final class PlaybackSession {
     }
 
     /**
-     * False once the world no longer knows this screen: the core was taken back down, blown up or
+     * False once the world no longer knows this screen: the screen was taken back down, blown up or
      * the chunk went away. Keeps a stale session from playing on after its screen is gone.
      */
     public boolean valid() {

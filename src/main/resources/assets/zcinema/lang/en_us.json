@@ -1,6 +1,5 @@
 {
-  "block.zcinema.screen_core": "Screen Core",
-  "itemGroup.zcinema": "Z Cinema",
+  "block.zcinema.screen": "Screen Block",
   "container.zcinema.screen": "Cinema Screen",
 
   "message.zcinema.created": "Recognized a %1$sx%2$s screen area",
@@ -12,7 +11,6 @@
   "gui.zcinema.play": "Play",
   "gui.zcinema.pause": "Pause",
   "gui.zcinema.remove": "Remove screen",
-  "gui.zcinema.hint": "Stick + sneak + right-click to register a wall or open the panel; stick + right-click the core to remove it.",
   "gui.zcinema.status.idle": "Paste a direct or parsing link and press Load",
   "gui.zcinema.status.loading": "Buffering...",
   "gui.zcinema.status.seeking": "Seeking...",

@@ -38,8 +38,8 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     }
 
     /**
-     * The quad can span a whole wall, but vanilla only knows the one block the core sits in: when
-     * a viewer stands close, the core leaves their frustum and the entire picture is culled.
+     * The quad can span a whole wall, but vanilla only knows the one block the state lives in:
+     * when a viewer stands close, that block leaves their frustum and the entire picture is culled.
      * Claiming the full rectangle keeps the screen visible from anywhere in front of it.
      */
     @Override
@@ -64,7 +64,7 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     }
 
     /**
-     * The picture can extend far beyond the chunk section that holds the core, so section
+     * The picture can extend far beyond the chunk section that holds the state, so section
      * visibility must not decide whether it renders: this renderer's own bounding box (checked
      * above) is the only sensible culling volume.
      */

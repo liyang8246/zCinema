@@ -25,7 +25,7 @@ import net.neoforged.neoforge.client.network.ClientPacketDistributor;
  */
 public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
     private static final int WIDTH = 256;
-    private static final int HEIGHT = 140;
+    private static final int HEIGHT = 118;
 
     private final CinemaScreenBlockEntity screen;
 
@@ -45,7 +45,6 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         this.screen = ClientPlayback.find(menu.pos());
         this.titleLabelX = 8;
         this.titleLabelY = 6;
-        this.inventoryLabelY = this.imageHeight - 94;
     }
 
     @Override
@@ -130,8 +129,16 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         graphics.drawString(this.font, net.minecraft.network.chat.Component.literal(status),
                 this.leftPos + 8, this.topPos + 92, 0xFFAAAAAA, false);
         graphics.drawString(this.font, timeText(), this.leftPos + 8, this.topPos + 104, 0xFFCCCCCC, false);
-        graphics.drawString(this.font, Component.translatable("gui.zcinema.hint"), this.leftPos + 8, this.topPos + 122,
-                0xFF777777, false);
+    }
+
+    /**
+     * This menu holds no inventory, so the vanilla player-inventory label has nothing to say.
+     * Draw the panel title alone - and in a light colour that is actually readable on the dark
+     * backdrop (the vanilla title colour assumes a stone-grey inventory panel).
+     */
+    @Override
+    protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
+        graphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, 0xFFE0E0E0, false);
     }
 
     private String statusKey() {
