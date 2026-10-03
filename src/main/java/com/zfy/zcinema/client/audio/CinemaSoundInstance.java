@@ -126,9 +126,9 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         } catch (Exception error) {
             ZCinema.LOGGER.warn("Failed to open screen audio for {} at {}s (will retry)", url,
                     session.mediaSeconds(), error);
-            ZCinemaLog.log("audio", "open FAILED screen=%s media=%.3fs after=%dms error=%s: %s",
+            ZCinemaLog.log("audio", "open FAILED screen=%s media=%.3fs after=%dms cause=%s",
                     pos.toShortString(), session.mediaSeconds(), System.currentTimeMillis() - started,
-                    error.getClass().getSimpleName(), error.getMessage());
+                    ZCinemaLog.cause(error));
             return failedStream();
         }
     }

@@ -48,7 +48,13 @@ public final class ZCinemaLog {
     }
 
     public static void log(String category, String format, Object... args) {
-        String message = args.length == 0 ? format : String.format(Locale.ROOT, format, args);
+        String message;
+        try {
+            message = args.length == 0 ? format : String.format(Locale.ROOT, format, args);
+        } catch (RuntimeException error) {
+            // Logging must never break the feature it is describing.
+            message = format + " [log format error: " + error + "]";
+        }
         synchronized (LOCK) {
             BufferedWriter out = writer();
             if (out == null) return;
@@ -76,6 +82,17 @@ public final class ZCinemaLog {
     public static String shorten(String value, int max) {
         if (value == null) return "null";
         return value.length() <= max ? value : value.substring(0, max) + "...";
+    }
+
+    /** Wrapped exceptions would otherwise hide the real reason in a one-line log. */
+    public static String cause(Throwable error) {
+        StringBuilder builder = new StringBuilder();
+        for (Throwable current = error; current != null && builder.length() < 400;
+             current = current.getCause()) {
+            if (builder.length() > 0) builder.append(" <- ");
+            builder.append(current.getClass().getSimpleName()).append(": ").append(current.getMessage());
+        }
+        return builder.toString();
     }
 
     private static BufferedWriter writer() {

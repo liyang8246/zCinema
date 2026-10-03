@@ -88,9 +88,8 @@ public final class PlaybackSession {
     private double seekLandedTarget = Double.NaN;
 
     /**
-     * Offset between the shared clock and our own media timeline. Correcting drift means nudging
-     * this by a few percent per second towards the server anchor, which keeps playback smooth
-     * instead of jumping around.
+     * Offset between the shared clock and our own media timeline. Normally 0: the local timeline
+     * simply follows the shared clock, and a real divergence is handled by {@link #hardResync()}.
      */
     private volatile double itemStartSeconds;
 
@@ -115,7 +114,8 @@ public final class PlaybackSession {
 
     private volatile double pendingSeek = Double.NaN;
     private long lastSeekAt;
-    private long lastAnchorAdjustAt;
+    /** When the decoded position first diverged from the shared clock by a real amount. */
+    private long divergenceSince;
     private long lastHealthReportAt;
     private long lastMediaReportAt;
     /** Early-EOF recovery: how often we may reposition, and how long we keep trying. */
@@ -265,35 +265,35 @@ public final class PlaybackSession {
     }
 
     /**
-     * Real divergence: jump our timeline onto the server anchor and let the decoder seek there.
-     * The stream is never reopened - the decoder repositions inside its connection, so there is
-     * no reconnect storm and no scaler churn.
+     * Line this client up with the shared clock: drop everything decoded at the old position and
+     * reposition the stream, or reopen it when the source cannot seek. The shared clock is the
+     * timeline everything follows, so the media timeline is reset onto it.
      */
     private void hardResync() {
         if (closed) return;
         double anchor = targetSeconds();
-        double current = mediaSeconds();
-        double diff = current - anchor;
-        itemStartSeconds += diff;
-        double target = mediaSeconds();
+        double local = Double.isNaN(displayedTs) ? lastDecodedTs : displayedTs;
+        double diff = Double.isNaN(local) ? 0.0 : local - anchor;
+        itemStartSeconds = 0.0;
+        double target = anchor;
         decodeHeartbeat = System.currentTimeMillis();
         failed = false;
         ended = false;
         errorMessage = null;
         recoveries = 0;
+        divergenceSince = 0L;
         lastSeekAt = System.currentTimeMillis();
-        // The shared clock jumped. Everything the decoder produced sits at the *previous*
-        // position, so drop it right now instead of waiting for the decode thread to notice:
-        // stale frames must not keep the screen "ready" (which would also keep the old audio
-        // instance alive) and must not be shown against the new clock.
+        // Everything the decoder produced sits at the *previous* position, so drop it right now
+        // instead of waiting for the decode thread to notice: stale frames must not keep the
+        // screen "ready" (which would also keep the old audio instance alive).
         clearQueue(true);
         ScreenAudio.stop(pos, "shared clock jumped");
         ZCinema.LOGGER.info("Screen {} jumped to the shared clock: was {}s, now {}s (delta {}s)",
-                pos, String.format(java.util.Locale.ROOT, "%.3f", current),
+                pos, String.format(java.util.Locale.ROOT, "%.3f", local),
                 String.format(java.util.Locale.ROOT, "%.3f", target),
                 String.format(java.util.Locale.ROOT, "%+.3f", diff));
         ZCinemaLog.log("seek", "hard resync screen=%s from=%.3fs to=%.3fs delta=%+.3fs threadAlive=%s "
-                        + "rangeOk=%s lastDecoded=%.3fs", pos.toShortString(), current, target, diff,
+                        + "rangeOk=%s lastDecoded=%.3fs", pos.toShortString(), local, target, diff,
                 decodeThread != null && decodeThread.isAlive(), rangeOk, lastDecodedTs);
         Thread thread = decodeThread;
         if (thread == null || !thread.isAlive()) {
@@ -606,8 +606,8 @@ public final class PlaybackSession {
                 failedAt = System.currentTimeMillis();
                 errorMessage = String.valueOf(error.getMessage());
                 ZCinema.LOGGER.warn("Screen {} failed to stream {} from {}s", pos, url, startSeconds, error);
-                ZCinemaLog.log("decode", "FAILED screen=%s from=%.3fs error=%s: %s", pos.toShortString(),
-                        startSeconds, error.getClass().getSimpleName(), error.getMessage());
+                ZCinemaLog.log("decode", "FAILED screen=%s from=%.3fs cause=%s", pos.toShortString(),
+                        startSeconds, ZCinemaLog.cause(error));
             }
         } finally {
             if (grabber != null) {
@@ -698,6 +698,15 @@ public final class PlaybackSession {
         if (bufferReady) {
             double master = mediaSeconds();
             synchronized (queue) {
+                // Safety net: a shared-clock jump can leave the queue full of frames from the
+                // previous position. If the oldest one is far beyond where we are, the whole
+                // queue is stale - drop it and go back to buffering instead of showing nothing
+                // forever while the session stays "ready" (which would also keep old audio).
+                if (!queue.isEmpty() && queue.peekFirst().ts > master + hardResyncSeconds() + 0.5) {
+                    ZCinemaLog.log("buffer", "stale queue dropped screen=%s first=%.3fs master=%.3fs",
+                            pos.toShortString(), queue.peekFirst().ts, master);
+                    clearQueue(true);
+                }
                 while (!queue.isEmpty() && queue.peekFirst().ts <= master + DISPLAY_LEAD_SECONDS) {
                     if (frame != null) frame.close();
                     frame = queue.pollFirst();
@@ -820,29 +829,35 @@ public final class PlaybackSession {
     }
 
     /**
-     * Create Cinema's anchor correction: compare our media timeline against the shared clock and
-     * pull it towards it by a few percent per second. Only a real divergence repositions the
-     * stream, and that path has no cooldown dance it can get stuck in.
+     * The decoder's real position against the shared clock. {@code mediaSeconds()} cannot be used
+     * for this: it is <em>defined</em> as the shared clock minus {@code itemStartSeconds}, so
+     * comparing the two always reports "in sync" and a reposition would never fire. Instead,
+     * compare the frame the viewer is actually looking at (or the newest decoded one) and
+     * reposition the stream once it is more than {@code hardResyncSeconds} away from the clock.
      */
     private void applyServerAnchor() {
         if (closed || failed || ended) return;
         double anchor = targetSeconds();
-        double current = mediaSeconds();
-        double diff = current - anchor;
-        if (Math.abs(diff) <= 0.15) return;
+        double local = Double.isNaN(displayedTs) ? lastDecodedTs : displayedTs;
+        if (Double.isNaN(local)) return;
+        double diff = local - anchor;
         long now = System.currentTimeMillis();
-        if (lastAnchorAdjustAt == 0L) {
-            lastAnchorAdjustAt = now;
+        if (Math.abs(diff) < hardResyncSeconds()) {
+            divergenceSince = 0L;
             return;
         }
-        double elapsed = Math.min(1.0, (now - lastAnchorAdjustAt) / 1_000.0);
-        lastAnchorAdjustAt = now;
-        if (Math.abs(diff) >= hardResyncSeconds()) {
-            hardResync();
+        if (divergenceSince == 0L) {
+            divergenceSince = now;
+            ZCinemaLog.log("clock", "divergence screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs",
+                    pos.toShortString(), anchor, local, diff);
             return;
         }
-        double correction = Math.copySign(Math.min(Math.abs(diff), Math.max(0.002, elapsed * 0.05)), diff);
-        itemStartSeconds += correction;
+        // Only act when the divergence persists: a single late frame is normal.
+        if (now - divergenceSince < 500L || seeking() || now - lastSeekAt < 1_000L) return;
+        ZCinemaLog.log("clock", "reposition screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs "
+                        + "sustained=%dms",
+                pos.toShortString(), anchor, local, diff, now - divergenceSince);
+        hardResync();
     }
 
     /** What this session tells the server about its own decoding. */

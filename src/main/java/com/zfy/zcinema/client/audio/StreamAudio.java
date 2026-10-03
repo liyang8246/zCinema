@@ -103,7 +103,7 @@ public final class StreamAudio implements AudioStream {
             // the picture is by now (Create Cinema's catch-up).
             double catchUpSeconds = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
             startTime = wrap(currentStart + discardBufferedSeconds(catchUpSeconds), duration);
-            ZCinemaLog.log("audio", "stream ready url=%s start=%.3fs duration=%.3fs %dHz x%d took=%dms",
+            ZCinemaLog.log("audio", "stream ready url=%s start=%.3fs duration=%.3fs %.0fHz x%d took=%dms",
                     ZCinemaLog.shorten(url, 200), startTime, duration, format.getSampleRate(),
                     format.getChannels(), System.currentTimeMillis() - openedAt);
         } catch (Exception error) {
