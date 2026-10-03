@@ -661,6 +661,19 @@ public final class PlaybackSession {
         if (failed && System.currentTimeMillis() - failedAt > RETRY_DELAY_MILLIS) {
             restartDecoder();
         }
+        if (ended && duration > 0.0 && targetSeconds() < duration - 0.5) {
+            // The shared timeline left the end of the film (someone replayed it, seeked back, or a
+            // link was reloaded under us). An ended decoder has no thread left, so it has to be
+            // started again - otherwise the screen stays stuck on the last frame until somebody
+            // seeks, which looks exactly like "nothing will play".
+            ended = false;
+            errorMessage = null;
+            recoveries = 0;
+            decodeHeartbeat = System.currentTimeMillis();
+            ZCinema.LOGGER.info("Screen {} timeline moved back to {}s, decoding again", pos,
+                    String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()));
+            openDecoder(mediaSeconds());
+        }
 
         applyServerAnchor();
         reportHealth();

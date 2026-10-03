@@ -525,6 +525,11 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         positionMs = input.getLongOr("PositionMs", 0L);
         anchorMs = input.getLongOr("AnchorMs", 0L);
         durationMs = input.getLongOr("DurationMs", 0L);
+        // anchorMs is a wall-clock stamp: a world saved while playing would otherwise resume as if
+        // the film kept running while the game was closed - after a coffee break that lands on the
+        // very end of the movie, so entering the world shows nothing. Reloading resumes the saved
+        // position instead.
+        anchorMs = System.currentTimeMillis();
         if (input.getLongOr("MinX", Long.MIN_VALUE) != Long.MIN_VALUE
                 && input.getLongOr("MaxX", Long.MIN_VALUE) != Long.MIN_VALUE) {
             screenMin = new BlockPos((int) input.getLongOr("MinX", 0), (int) input.getLongOr("MinY", 0),

@@ -86,6 +86,9 @@ final class FrameScaler implements AutoCloseable {
                 avutil.AV_PIX_FMT_RGBA, swscale.SWS_BILINEAR, null, null, (double[]) null);
         if (context == null || context.isNull()) throw new IOException("FFmpeg could not create a video scaler");
         output = new BytePointer((long) targetWidth * targetHeight * 4L);
+        // Belt and braces: every frame is RGBA with alpha 255, and pre-filling the buffer means a
+        // scaler that leaves the alpha byte alone can never turn the screen translucent.
+        MemoryUtil.memSet(output.address(), (byte) 0xFF, (long) targetWidth * targetHeight * 4L);
         outputPlanes = new PointerPointer<>(4);
         outputPlanes.put(0, output);
         outputStrides = new IntPointer(4);

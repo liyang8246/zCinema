@@ -11,7 +11,6 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
@@ -26,8 +25,9 @@ import org.jetbrains.annotations.Nullable;
  * screen is visible.
  */
 public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlockEntity, CinemaScreenRenderState> {
-    // The quad is nudged off the concrete face so it can never z-fight with the block itself.
-    private static final float OFFSET = 0.03F;
+    // The quad sits barely off the concrete face: close enough to look flush with the wall, far
+    // enough that the block face and the picture do not fight over the same depth value.
+    private static final float OFFSET = 0.01F;
 
     public CinemaScreenRenderer(BlockEntityRendererProvider.Context context) {
     }
@@ -145,7 +145,9 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
         float[][] finalCorners = fitted;
         boolean finalFlip = flipU;
         Direction finalNormal = normal;
-        collector.submitCustomGeometry(poseStack, RenderTypes.entityTranslucentEmissive(frame.texture()),
+        // The screen draws with its own emissive, unlit pipeline: exactly the decoded colours, no
+        // room light, no fog tint from the dimension and no per-face shading.
+        collector.submitCustomGeometry(poseStack, ModRenderPipelines.screen(frame.texture()),
                 (pose, consumer) -> drawQuad(consumer, pose, finalNormal, finalCorners, finalFlip));
         poseStack.popPose();
     }

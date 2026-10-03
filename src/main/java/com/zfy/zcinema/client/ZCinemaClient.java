@@ -6,6 +6,7 @@ import com.zfy.zcinema.client.config.ClientConfig;
 import com.zfy.zcinema.client.gui.CinemaScreenUI;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.render.CinemaScreenRenderer;
+import com.zfy.zcinema.client.render.ModRenderPipelines;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.registry.ModMenus;
 import net.neoforged.api.distmarker.Dist;
@@ -26,6 +27,7 @@ public final class ZCinemaClient {
 
     public static void init(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
+        modEventBus.addListener(ModRenderPipelines::register);
         NeoForge.EVENT_BUS.register(new ClientGameEvents());
     }
 
