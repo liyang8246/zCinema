@@ -29,6 +29,7 @@ public final class ZCinemaClient {
         modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
         modEventBus.addListener(ModRenderPipelines::register);
         NeoForge.EVENT_BUS.register(new ClientGameEvents());
+        NeoForge.EVENT_BUS.register(new CrosshairHider());
     }
 
     @SubscribeEvent
