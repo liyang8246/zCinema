@@ -12,7 +12,7 @@
   "gui.zcinema.play": "Play",
   "gui.zcinema.pause": "Pause",
   "gui.zcinema.remove": "Remove screen",
-  "gui.zcinema.hint": "Build a black concrete wall, then sneak + right-click it with a stick to register the screen.",
+  "gui.zcinema.hint": "Stick + sneak + right-click to register a wall or open the panel; stick + right-click the core to remove it.",
   "gui.zcinema.status.idle": "Paste an MP4 direct link and press Load",
   "gui.zcinema.status.loading": "Buffering...",
   "gui.zcinema.status.seeking": "Seeking...",

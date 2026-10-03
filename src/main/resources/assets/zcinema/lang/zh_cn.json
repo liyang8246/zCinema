@@ -12,7 +12,7 @@
   "gui.zcinema.play": "播放",
   "gui.zcinema.pause": "暂停",
   "gui.zcinema.remove": "撤下屏幕",
-  "gui.zcinema.hint": "搭建一块黑色混凝土屏幕墙，木棍+潜行右键识别；同一链接全员同步播放。",
+  "gui.zcinema.hint": "木棍+潜行+右键识别墙壁或打开面板；木棍右键核心块撤下；同一链接全员同步播放。",
   "gui.zcinema.status.idle": "粘贴 MP4 直链，然后点击“载入”",
   "gui.zcinema.status.loading": "缓冲中…",
   "gui.zcinema.status.seeking": "定位中…",

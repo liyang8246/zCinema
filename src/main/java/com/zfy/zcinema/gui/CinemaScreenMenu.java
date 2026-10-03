@@ -6,7 +6,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.phys.Vec3;
 
 /** Empty menu for the screen. It only exists so the GUI can be opened server-authorised. */
 public class CinemaScreenMenu extends AbstractContainerMenu {
@@ -36,7 +35,7 @@ public class CinemaScreenMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return player.level().getBlockEntity(pos) instanceof com.zfy.zcinema.blockentity.CinemaScreenBlockEntity
-                && player.distanceToSqr(Vec3.atCenterOf(pos)) <= 8 * 8;
+        return player.level().getBlockEntity(pos) instanceof com.zfy.zcinema.blockentity.CinemaScreenBlockEntity be
+                && be.canControl(player);
     }
 }

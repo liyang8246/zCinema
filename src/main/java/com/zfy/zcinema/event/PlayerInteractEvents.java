@@ -2,6 +2,7 @@ package com.zfy.zcinema.event;
 
 import com.zfy.zcinema.block.ScreenCoreBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
+import com.zfy.zcinema.gui.CinemaScreenMenu;
 import com.zfy.zcinema.screen.ScreenArea;
 import com.zfy.zcinema.screen.ScreenDetector;
 import com.zfy.zcinema.registry.ModBlocks;
@@ -15,6 +16,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -24,15 +26,18 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Screen building: build a flat wall of black concrete, then hold a stick and sneak right-click
- * any block of it. The mod flood-fills the connected concrete, verifies it is flat and turns the
- * clicked block into a screen core for the whole rectangle, facing the player.
+ * Everything on a screen is done with a stick in hand, and nothing without one:
  *
  * <ul>
- *   <li>stick + sneak + right-click concrete: register the screen (or open it if it already has one)</li>
- *   <li>right-click a core (no stick): open the control panel</li>
- *   <li>right-click a core with a stick: remove the screen again</li>
+ *   <li>stick + sneak + right-click concrete: register the wall as a screen (or open the panel of
+ *       the screen it already belongs to)</li>
+ *   <li>stick + sneak + right-click a core: open the control panel</li>
+ *   <li>stick + right-click a core (no sneak): take the screen down again</li>
  * </ul>
+ *
+ * <p>Right-clicking a screen without a stick stays vanilla, so blocks still place against it.
+ * The handler runs on both sides: the server does the work, the client cancels its own prediction
+ * so it does not place a block or try the other hand after the gesture.
  */
 public final class PlayerInteractEvents {
     private PlayerInteractEvents() {}
@@ -43,45 +48,53 @@ public final class PlayerInteractEvents {
 
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (!(event.getLevel() instanceof ServerLevel level)) return;
         Player player = event.getEntity();
         if (player == null) return;
+        Level level = event.getLevel();
         BlockPos pos = event.getPos();
         BlockState state = level.getBlockState(pos);
         boolean core = state.is(ModBlocks.SCREEN_CORE.get());
         boolean material = ScreenDetector.isScreenMaterial(state);
         if (!core && !material) return;
 
-        boolean stick = holdsStick(player, event.getHand());
+        // The stick is part of every gesture. Its absence must also stop the core block from
+        // opening anything by itself, otherwise the panel leaks out without it.
+        if (!holdsStick(player, event.getHand())) return;
         boolean sneak = player.isShiftKeyDown();
-        Direction hitFace = event.getHitVec() instanceof BlockHitResult hit ? hit.getDirection() : Direction.UP;
-        Vec3 eye = player.getEyePosition();
 
-        if (core) {
-            // A stick on a core removes the screen; anything else opens its control panel.
-            if (stick) {
-                level.setBlockAndUpdate(pos, Blocks.BLACK_CONCRETE.defaultBlockState());
+        if (core && !sneak) {
+            // Stick on the core without sneaking: take the screen down and restore the concrete.
+            if (level instanceof ServerLevel serverLevel) {
+                serverLevel.setBlockAndUpdate(pos, Blocks.BLACK_CONCRETE.defaultBlockState());
                 tell(player, "message.zcinema.removed");
-            } else if (level.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
-                openPanel(player, be);
             }
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.CONSUME);
+            consume(event);
             return;
         }
-        if (material && sneak && (stick || player.getItemInHand(event.getHand()).isEmpty())) {
-            CinemaScreenBlockEntity existing = findCore(level, pos, hitFace, eye);
-            if (existing != null) {
-                openPanel(player, existing);
-                event.setCanceled(true);
-                event.setCancellationResult(InteractionResult.CONSUME);
-                return;
-            }
-            ScreenArea area = ScreenDetector.detect(level, pos, hitFace, eye);
+        if (!sneak) return;
+
+        if (!(level instanceof ServerLevel serverLevel)) {
+            // Client side only predicts the gesture; the server owns what actually happens.
+            consume(event);
+            return;
+        }
+
+        // Sneak + stick: open the panel when this wall already is a screen, otherwise register it.
+        Direction hitFace = event.getHitVec() instanceof BlockHitResult hit ? hit.getDirection() : Direction.UP;
+        Vec3 eye = player.getEyePosition();
+        CinemaScreenBlockEntity existing = core
+                ? (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be ? be : null)
+                : findCore(serverLevel, pos, hitFace, eye);
+        if (existing != null) {
+            openPanel(player, existing);
+            consume(event);
+            return;
+        }
+        if (!core) {
+            ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
             if (area == null) {
                 tell(player, "message.zcinema.not_flat");
-                event.setCanceled(true);
-                event.setCancellationResult(InteractionResult.CONSUME);
+                consume(event);
                 return;
             }
             Direction facing = area.normal().getAxis().isHorizontal()
@@ -89,15 +102,19 @@ public final class PlayerInteractEvents {
                     : Direction.NORTH;
             BlockState newState = ModBlocks.SCREEN_CORE.get().defaultBlockState()
                     .setValue(ScreenCoreBlock.FACING, facing);
-            level.setBlockAndUpdate(pos, newState);
-            if (level.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
+            serverLevel.setBlockAndUpdate(pos, newState);
+            if (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
                 be.setScreenArea(area);
                 be.broadcastState();
                 tell(player, "message.zcinema.created", area.screenWidth(), area.screenHeight());
             }
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.CONSUME);
         }
+        consume(event);
+    }
+
+    private static void consume(PlayerInteractEvent.RightClickBlock event) {
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.CONSUME);
     }
 
     private static boolean holdsStick(Player player, InteractionHand hand) {
@@ -123,9 +140,13 @@ public final class PlayerInteractEvents {
     }
 
     private static void openPanel(Player player, CinemaScreenBlockEntity be) {
-        if (player instanceof ServerPlayer server) {
-            server.openMenu(be, buffer -> buffer.writeBlockPos(be.getBlockPos()));
+        if (!(player instanceof ServerPlayer server)) return;
+        // A double-triggered interact must not close and reopen the panel: only open it when the
+        // player is not already looking at this very screen.
+        if (server.containerMenu instanceof CinemaScreenMenu menu && menu.pos().equals(be.getBlockPos())) {
+            return;
         }
+        server.openMenu(be, buffer -> buffer.writeBlockPos(be.getBlockPos()));
     }
 
     private static void tell(Player player, String key, Object... args) {

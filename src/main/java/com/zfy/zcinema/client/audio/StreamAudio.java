@@ -59,7 +59,6 @@ public final class StreamAudio implements AudioStream {
         org.bytedeco.javacv.FFmpegFrameGrabber opened = null;
         InputStream openedInput = null;
         try {
-            double requestedStart = Math.max(0.0, startSeconds.getAsDouble());
             opened = new org.bytedeco.javacv.FFmpegFrameGrabber(url);
             opened.setVideoStream(-1);
             opened.start();
@@ -70,7 +69,11 @@ public final class StreamAudio implements AudioStream {
             duration = resolvedDuration > 1.0 ? resolvedDuration : Math.max(0.0, knownDuration);
             grabber = opened;
             input = openedInput;
-            double currentStart = duration > 0.0 ? wrap(requestedStart, duration) : requestedStart;
+            // Where the media is *now*, not where it was before opening the decoder: start() can
+            // take a moment on a network stream, and seeking to a stale position is exactly what
+            // makes the sound walk half a second behind the picture.
+            double currentSeconds = Math.max(0.0, startSeconds.getAsDouble());
+            double currentStart = duration > 0.0 ? wrap(currentSeconds, duration) : currentSeconds;
             // Seek after start(): JavaCV clears a pending timestamp inside start(), so a seek set
             // before it would be dropped and the audio would decode from the very beginning.
             if (currentStart > 0.0) {
@@ -89,7 +92,10 @@ public final class StreamAudio implements AudioStream {
             decoderThread.setDaemon(true);
             decoderThread.start();
             waitForStartupBuffer();
-            double catchUpSeconds = forwardDelta(wrap(requestedStart, duration), currentStart, duration);
+            // Everything decoded above sits at currentStart, but the media clock kept running while
+            // we buffered: throw away that much PCM so the first sample the engine plays is where
+            // the picture is by now (Create Cinema's catch-up).
+            double catchUpSeconds = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
             startTime = wrap(currentStart + discardBufferedSeconds(catchUpSeconds), duration);
         } catch (Exception error) {
             if (opened != null) {

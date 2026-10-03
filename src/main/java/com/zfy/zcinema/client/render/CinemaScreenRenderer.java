@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,6 +35,42 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     @Override
     public CinemaScreenRenderState createRenderState() {
         return new CinemaScreenRenderState();
+    }
+
+    /**
+     * The quad can span a whole wall, but vanilla only knows the one block the core sits in: when
+     * a viewer stands close, the core leaves their frustum and the entire picture is culled.
+     * Claiming the full rectangle keeps the screen visible from anywhere in front of it.
+     */
+    @Override
+    public AABB getRenderBoundingBox(CinemaScreenBlockEntity blockEntity) {
+        ScreenArea area = blockEntity.screenArea();
+        if (area == null) return BlockEntityRenderer.super.getRenderBoundingBox(blockEntity);
+        BlockPos min = area.min();
+        BlockPos max = area.max();
+        return new AABB(min.getX(), min.getY(), min.getZ(),
+                max.getX() + 1.0, max.getY() + 1.0, max.getZ() + 1.0).inflate(1.0);
+    }
+
+    /** Same reason as the bounding box: a big screen stays in view from well beyond one block. */
+    @Override
+    public boolean shouldRender(CinemaScreenBlockEntity blockEntity, Vec3 cameraPos) {
+        ScreenArea area = blockEntity.screenArea();
+        if (area == null) return BlockEntityRenderer.super.shouldRender(blockEntity, cameraPos);
+        double diagonal = Math.sqrt(area.width() * area.width() + area.height() * area.height()
+                + area.depth() * area.depth());
+        double reach = 128.0 + diagonal;
+        return getRenderBoundingBox(blockEntity).distanceToSqr(cameraPos) <= reach * reach;
+    }
+
+    /**
+     * The picture can extend far beyond the chunk section that holds the core, so section
+     * visibility must not decide whether it renders: this renderer's own bounding box (checked
+     * above) is the only sensible culling volume.
+     */
+    @Override
+    public boolean shouldRenderOffScreen() {
+        return true;
     }
 
     @Override

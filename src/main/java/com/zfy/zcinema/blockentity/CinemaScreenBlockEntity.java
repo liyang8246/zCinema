@@ -421,7 +421,15 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     }
 
     public boolean canControl(Player player) {
-        return level != null && player.distanceToSqr(Vec3.atCenterOf(getBlockPos())) <= CONTROL_RANGE_SQR;
+        if (level == null) return false;
+        // Measuring to the core alone would close the panel the moment somebody uses it from the
+        // far side of a big screen, so measure to the screen itself.
+        ScreenArea area = screenArea();
+        if (area == null) return player.distanceToSqr(Vec3.atCenterOf(getBlockPos())) <= CONTROL_RANGE_SQR;
+        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                area.min().getX(), area.min().getY(), area.min().getZ(),
+                area.max().getX() + 1.0, area.max().getY() + 1.0, area.max().getZ() + 1.0);
+        return box.distanceToSqr(player.position()) <= CONTROL_RANGE_SQR;
     }
 
     // =============================== client mirror ===============================
