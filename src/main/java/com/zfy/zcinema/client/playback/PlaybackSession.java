@@ -86,6 +86,11 @@ public final class PlaybackSession {
     private long lastStateLogAt;
     private long seekAppliedAt;
     private double seekLandedTarget = Double.NaN;
+    /** Decode throughput counters, so a slow machine can be told apart from a stalled one. */
+    private final AtomicInteger decodedFrames = new AtomicInteger();
+    private final AtomicInteger droppedFrames = new AtomicInteger();
+    private int lastDecodedFrames;
+    private int lastDroppedFrames;
 
     /**
      * Offset between the shared clock and our own media timeline. Normally 0: the local timeline
@@ -249,12 +254,25 @@ public final class PlaybackSession {
      * audio while the timeline is stuck would just spin, so the controller waits for this.
      */
     public boolean advancedSince(double since) {
-        double current = mediaSeconds();
+        double current = audioReferenceSeconds();
         double distance = Math.abs(current - since);
         double total = durationSeconds();
         return total > 0.0
                 ? Math.min(distance, total - distance) >= 0.25
                 : distance >= 0.25;
+    }
+
+    /**
+     * Where the sound for this screen should be right now: the picture the viewer is actually
+     * looking at, pulled back by the configured audio delay. The delay compensates the display
+     * pipeline (a rendered frame reaches the eyes later than the sound reaches the ears), which
+     * would otherwise make the sound lead the picture by roughly that much. Anchoring to the
+     * displayed frame also keeps the sound matched to this client's actual decode position
+     * instead of the abstract shared clock.
+     */
+    public double audioReferenceSeconds() {
+        double picture = Double.isNaN(displayedTs) ? mediaSeconds() : displayedTs;
+        return Math.max(0.0, picture - ClientConfig.audioDelayMs / 1000.0);
     }
 
     // =============================== lifecycle ===============================
@@ -595,11 +613,15 @@ public final class PlaybackSession {
                         Thread.sleep(4L);
                     }
                     if (isRetired(generation)) return;
-                    if (ts < mediaSeconds() - 0.12) continue; // already past, do not scale it
+                    if (ts < mediaSeconds() - 0.12) {
+                        droppedFrames.incrementAndGet(); // already past, do not scale it
+                        continue;
+                    }
 
                     DecodedFrame decoded = scaler.decode(frame, maxWidth, maxHeight);
                     if (decoded == null) continue;
                     enqueue(generation, new DecodedFrame(decoded.image, ts));
+                    decodedFrames.incrementAndGet();
                     recoveries = 0;
                 }
             }
@@ -808,7 +830,7 @@ public final class PlaybackSession {
         // the media timeline is NOW, not against the pre-resync value read above.
         media = mediaSeconds();
         reportHealth();
-        ScreenAudio.update(this, media);
+        ScreenAudio.update(this, audioReferenceSeconds());
         logState(media);
     }
 
@@ -824,13 +846,20 @@ public final class PlaybackSession {
         double videoError = Double.isNaN(displayedTs) ? Double.NaN : displayedTs - media;
         double audioPosition = ScreenAudio.debugPosition(pos);
         double audioError = Double.isNaN(audioPosition) ? Double.NaN : audioPosition - media;
+        int decoded = decodedFrames.get();
+        int dropped = droppedFrames.get();
+        int decodedRate = decoded - lastDecodedFrames;
+        int droppedRate = dropped - lastDroppedFrames;
+        lastDecodedFrames = decoded;
+        lastDroppedFrames = dropped;
         ZCinemaLog.log("state", "screen=%s shared=%.3fs media=%.3fs itemStart=%+.3fs drift=%+.3fs "
                         + "videoErr=%s audioErr=%s frame=%s buf=%d/%s ready=%s rebuf=%s seeking=%s "
-                        + "resyncing=%s playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s",
+                        + "resyncing=%s playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s "
+                        + "video=%d/s drop=%d/s",
                 pos.toShortString(), targetSeconds(), media, itemStartSeconds, media - targetSeconds(),
                 fmt(videoError), fmt(audioError), fmt(displayedTs), buffered, fmt(bufferedSeconds()),
                 bufferReady, rebuffering, seeking(), resyncing, be.clientPlaying(), be.clientFrozen(),
-                clockMoving, failed, ended, rangeOk);
+                clockMoving, failed, ended, rangeOk, decodedRate, droppedRate);
     }
 
     private static String fmt(double value) {

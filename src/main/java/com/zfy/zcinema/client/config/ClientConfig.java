@@ -19,6 +19,12 @@ public final class ClientConfig {
     public static double bufferSeconds = 1.5;
     /** If the shared clock and local playback diverge by more than this, the stream seeks. */
     public static double hardResyncSeconds = 3.0;
+    /**
+     * The sound is played this many milliseconds behind the displayed picture, to compensate the
+     * display pipeline (a rendered frame reaches the eyes later than the sound reaches the ears).
+     * Reported "audio is ~100ms ahead" is the usual symptom when this is too low.
+     */
+    public static int audioDelayMs = 100;
     /** How far away the screen audio can be heard. */
     public static int audioDistance = 48;
 
@@ -30,6 +36,7 @@ public final class ClientConfig {
         maxFrameHeight = JsonConfig.getInt(root, "maxFrameHeight", maxFrameHeight, 240, 4320);
         bufferSeconds = JsonConfig.getDouble(root, "bufferSeconds", bufferSeconds, 0.25, 8.0);
         hardResyncSeconds = JsonConfig.getDouble(root, "hardResyncSeconds", hardResyncSeconds, 0.5, 30.0);
+        audioDelayMs = JsonConfig.getInt(root, "audioDelayMs", audioDelayMs, 0, 500);
         audioDistance = JsonConfig.getInt(root, "audioDistance", audioDistance, 4, 256);
 
         JsonObject out = root.deepCopy();
@@ -37,10 +44,12 @@ public final class ClientConfig {
         out.addProperty("maxFrameHeight", maxFrameHeight);
         out.addProperty("bufferSeconds", bufferSeconds);
         out.addProperty("hardResyncSeconds", hardResyncSeconds);
+        out.addProperty("audioDelayMs", audioDelayMs);
         out.addProperty("audioDistance", audioDistance);
         JsonConfig.write(FILE_NAME, out);
-        ZCinemaLog.log("config", "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs audioDistance=%d "
-                        + "(config/%s)",
-                maxFrameWidth, maxFrameHeight, bufferSeconds, hardResyncSeconds, audioDistance, FILE_NAME);
+        ZCinemaLog.log("config", "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs "
+                        + "audioDelay=%dms audioDistance=%d (config/%s)",
+                maxFrameWidth, maxFrameHeight, bufferSeconds, hardResyncSeconds, audioDelayMs,
+                audioDistance, FILE_NAME);
     }
 }

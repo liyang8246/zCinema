@@ -57,8 +57,6 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     private volatile boolean openFailed;
     private volatile boolean openQueued;
     private volatile AudioStream stream;
-    private volatile double streamStartTime = Double.NaN;
-    private volatile long streamOpenedAt;
 
     private int freezeTicks;
     private double previousPlayTime = Double.NaN;
@@ -108,7 +106,7 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         }
         long started = System.currentTimeMillis();
         try {
-            StreamAudio opened = new StreamAudio(session.streamUrl(), session::mediaSeconds,
+            StreamAudio opened = new StreamAudio(session.streamUrl(), session::audioReferenceSeconds,
                     session.durationSeconds());
             if (stopped || !session.matchesUrl(url)) {
                 opened.close();
@@ -117,11 +115,10 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
                 return failedStream();
             }
             stream = opened;
-            streamStartTime = opened.startTime();
-            streamOpenedAt = System.currentTimeMillis();
-            ZCinemaLog.log("audio", "opened screen=%s startTime=%.3fs requestAt=%.3fs took=%dms",
-                    pos.toShortString(), opened.startTime(), session.mediaSeconds(),
-                    streamOpenedAt - started);
+            ZCinemaLog.log("audio", "stream built screen=%s referenceAt=%.3fs took=%dms "
+                            + "(start chosen on the engine's first read)",
+                    pos.toShortString(), session.audioReferenceSeconds(),
+                    System.currentTimeMillis() - started);
             return opened;
         } catch (Exception error) {
             ZCinema.LOGGER.warn("Failed to open screen audio for {} at {}s (will retry)", url,
@@ -159,7 +156,7 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
                     Math.sqrt(minecraft.player.distanceToSqr(x, y, z))));
             return;
         }
-        latestPlayTime = session.mediaSeconds();
+        latestPlayTime = session.audioReferenceSeconds();
         if (!Double.isNaN(previousPlayTime) && latestPlayTime == previousPlayTime) {
             freezeTicks++;
         } else {
@@ -182,7 +179,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
 
     /** True when the engine accepted the play request but the channel never came up. */
     boolean unstarted() {
-        return openQueued && streamOpenedAt == 0L
+        AudioStream current = stream;
+        return openQueued && !(current instanceof StreamAudio audio && audio.started())
                 && System.currentTimeMillis() - createdMillis > UNSTARTED_WATCHDOG_MILLIS;
     }
 
@@ -194,11 +192,18 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         return openFailed;
     }
 
-    /** Where this sound's timeline currently sits, measured from when its stream opened. */
+    /**
+     * Where the sound is on the media timeline. Measured from the real PCM already handed to the
+     * sound engine, not from the wall clock: if the engine takes a second to start pulling, the
+     * sound really is a second behind, and the estimate has to say so instead of reporting a
+     * position that only exists on paper. Before the first read the position is unknown.
+     */
     double audioPositionSeconds() {
-        long base = streamOpenedAt > 0L ? streamOpenedAt : createdMillis;
-        double started = Double.isNaN(streamStartTime) ? latestPlayTime : streamStartTime;
-        return started + (System.currentTimeMillis() - base) / 1000.0;
+        AudioStream current = stream;
+        if (current instanceof StreamAudio audio && audio.started()) {
+            return audio.playedSeconds();
+        }
+        return Double.NaN;
     }
 
     double driftRestartSeconds() {

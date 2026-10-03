@@ -98,6 +98,7 @@
 | `globalStallPause` | true | 多名观众都报告视频源不可达时，是否冻结全员 |
 | `bufferSeconds` | 1.5 | 本地解码领先共享时钟多少 |
 | `hardResyncSeconds` | 3.0 | 偏差超过该值时直接把流定位过去 |
+| `audioDelayMs` | 100 | 声音相对画面延迟多少毫秒（补偿显示管线，觉得声音快就调大） |
 | `maxFrameWidth/Height` | 1920/1080 | 解码缩放上限 |
 | `audioDistance` | 48 | 声音传播距离 |
 
@@ -136,6 +137,7 @@ logs/zcinema.log
 | `videoErr` | 最近上屏画面的时间 − `media` | 明显负值＝画面落后（卡帧、追帧中） |
 | `audioErr` | 声音估算位置 − `media` | 绝对值大＝音画不同步 |
 | `buf/ready/rebuf` | 帧队列长度/秒数、是否可播、是否在缓冲 | `rebuf=true` 表示正在等数据 |
+| `video/drop` | 每秒解码出的帧数/被跳过的（过时）帧数 | `drop` 持续大于 0 说明本机解码跟不上，画面会落后 |
 | `seeking` | 是否正在定位 | 长时间 true 说明源定位慢或卡住 |
 | `resyncing` | 是否正在“对齐共享时钟”的重定位 | 前跳/回跳后应短暂为 true，随后归位 |
 

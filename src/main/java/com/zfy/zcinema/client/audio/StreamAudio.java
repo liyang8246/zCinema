@@ -44,8 +44,12 @@ public final class StreamAudio implements AudioStream {
     private final org.bytedeco.javacv.FFmpegFrameGrabber grabber;
     private final AudioFormat format;
     private final double duration;
-    private final double startTime;
     private final InputStream input;
+    private final DoubleSupplier startSeconds;
+    private final double currentStart;
+    private volatile double startTime = Double.NaN;
+    private volatile boolean started;
+    private volatile long firstReadAt;
     private final ArrayBlockingQueue<ByteBuffer> decoded = new ArrayBlockingQueue<>(MAX_BUFFERED_PCM_CHUNKS);
     private final AtomicInteger bufferedBytes = new AtomicInteger();
     private final AtomicBoolean resourcesClosed = new AtomicBoolean();
@@ -76,8 +80,9 @@ public final class StreamAudio implements AudioStream {
             // Where the media is *now*, not where it was before opening the decoder: start() can
             // take a moment on a network stream, and seeking to a stale position is exactly what
             // makes the sound walk half a second behind the picture.
+            this.startSeconds = startSeconds;
             double currentSeconds = Math.max(0.0, startSeconds.getAsDouble());
-            double currentStart = duration > 0.0 ? wrap(currentSeconds, duration) : currentSeconds;
+            this.currentStart = duration > 0.0 ? wrap(currentSeconds, duration) : currentSeconds;
             // Seek after start(): JavaCV clears a pending timestamp inside start(), so a seek set
             // before it would be dropped and the audio would decode from the very beginning.
             if (currentStart > 0.0) {
@@ -98,13 +103,12 @@ public final class StreamAudio implements AudioStream {
             decoderThread.setDaemon(true);
             decoderThread.start();
             waitForStartupBuffer();
-            // Everything decoded above sits at currentStart, but the media clock kept running while
-            // we buffered: throw away that much PCM so the first sample the engine plays is where
-            // the picture is by now (Create Cinema's catch-up).
-            double catchUpSeconds = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
-            startTime = wrap(currentStart + discardBufferedSeconds(catchUpSeconds), duration);
-            ZCinemaLog.log("audio", "stream ready url=%s start=%.3fs duration=%.3fs %.0fHz x%d took=%dms",
-                    ZCinemaLog.shorten(url, 200), startTime, duration, format.getSampleRate(),
+            // The start position is chosen on the first read, not here: the sound engine can take
+            // a while between receiving the stream and pulling samples, and compensating before
+            // that leaves the sound exactly that far behind the picture.
+            ZCinemaLog.log("audio", "stream ready url=%s duration=%.3fs %.0fHz x%d took=%dms "
+                            + "(waiting for the engine's first read)",
+                    ZCinemaLog.shorten(url, 200), duration, format.getSampleRate(),
                     format.getChannels(), System.currentTimeMillis() - openedAt);
         } catch (Exception error) {
             if (opened != null) {
@@ -128,9 +132,26 @@ public final class StreamAudio implements AudioStream {
         return format;
     }
 
-    /** Position in the media this stream actually starts sounding at. */
+    /** Position in the media this stream starts sounding at; unknown until the first read. */
     public double startTime() {
         return startTime;
+    }
+
+    /** True once the sound engine pulled its first samples. */
+    public boolean started() {
+        return started;
+    }
+
+    /**
+     * Wall-clock position of this stream's audible timeline, counted from the first read. The
+     * engine consumes at the playback rate, so wall time tracks the speakers - while the data
+     * written into OpenAL runs up to about one queued buffer ahead of the play cursor and must
+     * not be mistaken for what is audible right now.
+     */
+    public double playedSeconds() {
+        long base = firstReadAt;
+        if (!started || base == 0L) return Double.NaN;
+        return startTime + (System.currentTimeMillis() - base) / 1000.0;
     }
 
     public boolean decoderEnded() {
@@ -139,7 +160,30 @@ public final class StreamAudio implements AudioStream {
 
     @Override
     public ByteBuffer read(int requestedBytes) throws IOException {
+        prepareFirstRead();
         return readPcm(requestedBytes, 0, true);
+    }
+
+    /**
+     * Chooses where the stream starts sounding. Only now, when the engine actually pulls samples,
+     * is it known how much media time passed since the decoder opened; everything decoded before
+     * this point is trimmed away so the first sample handed out matches the caller's reference at
+     * this very moment (rather than at construction time, which can be a second earlier).
+     */
+    private void prepareFirstRead() {
+        if (started) return;
+        started = true;
+        double catchUp = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
+        double discarded = 0.0;
+        try {
+            discarded = discardBufferedSeconds(catchUp);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+        }
+        startTime = wrap(currentStart + discarded, duration);
+        firstReadAt = System.currentTimeMillis();
+        ZCinemaLog.log("audio", "first read: start=%.3fs catchUp=%.3fs discarded=%.3fs",
+                startTime, catchUp, discarded);
     }
 
     private ByteBuffer readPcm(int requestedBytes, int waitMillis, boolean padSilence) throws IOException {
@@ -215,7 +259,7 @@ public final class StreamAudio implements AudioStream {
     /** Throws away already decoded PCM so the stream starts where the video is. */
     private double discardBufferedSeconds(double seconds) throws InterruptedException {
         int frameSize = Math.max(1, format.getFrameSize());
-        int bytesPerSecond = Math.max(frameSize, Math.round(format.getFrameRate() * frameSize));
+        int bytesPerSecond = bytesPerSecond();
         int remaining = Math.max(0, (int) Math.min(Integer.MAX_VALUE, seconds * bytesPerSecond));
         remaining -= remaining % frameSize;
         int discarded = 0;
@@ -363,5 +407,11 @@ public final class StreamAudio implements AudioStream {
         float frameRate = format.getFrameRate() > 0 ? format.getFrameRate() : format.getSampleRate();
         int frames = Math.max(1, Math.round(frameRate * millis / 1000.0f));
         return frames * frameSize;
+    }
+
+    private int bytesPerSecond() {
+        int frameSize = Math.max(1, format.getFrameSize());
+        float frameRate = format.getFrameRate() > 0 ? format.getFrameRate() : format.getSampleRate();
+        return Math.max(1, Math.round(frameRate) * frameSize);
     }
 }
