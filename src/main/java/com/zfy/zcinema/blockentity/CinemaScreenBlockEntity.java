@@ -268,7 +268,16 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     }
 
     public void reportDuration(long millis) {
+        reportDuration(this.url, millis);
+    }
+
+    /**
+     * Duration reported by a viewer. Reports for a link the screen is no longer playing are
+     * dropped, so an in-flight report from the previous film cannot stretch the new one.
+     */
+    public void reportDuration(String reportedUrl, long millis) {
         if (level == null || level.isClientSide() || millis <= 0L) return;
+        if (reportedUrl == null || !reportedUrl.equals(url)) return;
         // Only ever grow the duration we know: a viewer that reports a smaller value would drag
         // the timeline (and every seek) backwards.
         if (millis <= durationMs) return;

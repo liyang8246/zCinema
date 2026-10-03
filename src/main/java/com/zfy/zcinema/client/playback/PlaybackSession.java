@@ -729,7 +729,7 @@ public final class PlaybackSession {
     private void sendDuration(double seconds) {
         durationReported = true;
         lastMediaReportAt = System.currentTimeMillis();
-        ClientPacketDistributor.sendToServer(new C2SReportMediaPacket(pos, (long) (seconds * 1000L)));
+        ClientPacketDistributor.sendToServer(new C2SReportMediaPacket(pos, url, (long) (seconds * 1000L)));
     }
 
     // =============================== status ===============================

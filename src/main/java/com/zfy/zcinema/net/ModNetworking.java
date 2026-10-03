@@ -55,7 +55,7 @@ public final class ModNetworking {
             switch (payload) {
                 case C2SSetUrlPacket p -> be.setUrl(player, p.url());
                 case C2SControlPacket p -> be.control(player, p.action(), p.positionMs());
-                case C2SReportMediaPacket p -> be.reportDuration(p.durationMs());
+                case C2SReportMediaPacket p -> be.reportDuration(p.url(), p.durationMs());
                 case C2SHealthPacket p -> be.reportPlaybackHealth(player, p.health());
                 default -> {
                 }

@@ -55,9 +55,11 @@ public final class ClientPlayback {
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, PlaybackSession> entry = iterator.next();
             PlaybackSession session = entry.getValue();
-            if (!session.valid() || session.blockEntity().clientUrl().isBlank()) {
-                // The screen was taken down, emptied or its chunk went away: stop everything
-                // right now instead of letting it play on against a stale block entity.
+            if (!session.valid() || session.blockEntity().clientUrl().isBlank()
+                    || !session.matchesUrl(session.blockEntity().clientUrl())) {
+                // The screen was taken down, emptied, its chunk went away, or it switched links:
+                // stop everything right now instead of letting it play on against a stale block
+                // entity or report the previous film's duration for the new one.
                 session.close();
                 iterator.remove();
                 continue;
@@ -163,6 +165,14 @@ public final class ClientPlayback {
         be.applyClientState(packet.url(), packet.positionMs(), packet.playing(), packet.frozen(),
                 packet.durationMs(), packet.hasArea(), packet.minX(), packet.minY(), packet.minZ(), packet.maxX(),
                 packet.maxY(), packet.maxZ(), packet.normal());
+        // Stop a session that was playing the previous link right away: the renderer would replace
+        // it on the next frame anyway, but until then its tick could report the old film's
+        // duration (or health) for the new one.
+        PlaybackSession session = SESSIONS.get(packet.pos());
+        if (session != null && !session.matchesUrl(packet.url())) {
+            session.close();
+            SESSIONS.remove(packet.pos());
+        }
     }
 
     public static void clearAll() {
