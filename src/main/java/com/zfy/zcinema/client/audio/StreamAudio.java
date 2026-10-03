@@ -35,6 +35,8 @@ public final class StreamAudio implements AudioStream {
     private static final int STARTUP_WAIT_TIMEOUT_MILLIS = 2_000;
     private static final int MAX_BUFFERED_PCM_MILLIS = 4_000;
     private static final int MAX_READ_MILLIS = 250;
+    /** Far jumps are treated as a new stream rather than a catch-up; the controller resyncs those. */
+    private static final double MAX_CATCH_UP_SECONDS = 3.0;
     private static final ExecutorService CLOSE_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "ZCinema Audio Close");
         thread.setDaemon(true);
@@ -60,6 +62,9 @@ public final class StreamAudio implements AudioStream {
     private volatile boolean decoderEnded;
     private long discardFrames;
     private double exactStartSeconds = Double.NaN;
+    /** Content frames still to drop so silence already handed to the engine cannot slide the sound. */
+    private int healFrames;
+    private long lastStarvationLogAt;
 
     public StreamAudio(String url, DoubleSupplier startSeconds, double knownDuration) throws IOException {
         long openedAt = System.currentTimeMillis();
@@ -102,14 +107,28 @@ public final class StreamAudio implements AudioStream {
             decoderThread = new Thread(this::decodeAudio, "ZCinema Audio Decode");
             decoderThread.setDaemon(true);
             decoderThread.start();
+            // Wait for a second of PCM, then keep filling until the buffer also covers the media
+            // time spent buffering. The start position is picked last and everything before it is
+            // trimmed, and the trim must not eat into the second the engine queues up front:
+            // otherwise the engine tops the shortfall up with silence and every later sample sits
+            // exactly that far behind the picture, permanently and invisibly.
             waitForStartupBuffer();
-            // The start position is chosen on the first read, not here: the sound engine can take
-            // a while between receiving the stream and pulling samples, and compensating before
-            // that leaves the sound exactly that far behind the picture.
-            ZCinemaLog.log("audio", "stream ready url=%s duration=%.3fs %.0fHz x%d took=%dms "
-                            + "(waiting for the engine's first read)",
+            waitForCatchUpBuffer();
+            double catchUp = currentCatchUp();
+            double discarded = 0.0;
+            try {
+                discarded = discardBufferedSeconds(catchUp);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+            startTime = wrap(currentStart + discarded, duration);
+            double shortfall = Math.max(0.0, catchUp - discarded);
+            if (shortfall > 0.0) healFrames += (int) Math.round(shortfall * format.getSampleRate());
+            ZCinemaLog.log("audio", "stream ready url=%s duration=%.3fs %.0fHz x%d start=%.3fs "
+                            + "catchUp=%.3fs discarded=%.3fs heal=%.3fs buffered=%.3fs took=%dms",
                     ZCinemaLog.shorten(url, 200), duration, format.getSampleRate(),
-                    format.getChannels(), System.currentTimeMillis() - openedAt);
+                    format.getChannels(), startTime, catchUp, discarded, shortfall, bufferedSeconds(),
+                    System.currentTimeMillis() - openedAt);
         } catch (Exception error) {
             if (opened != null) {
                 try {
@@ -132,7 +151,7 @@ public final class StreamAudio implements AudioStream {
         return format;
     }
 
-    /** Position in the media this stream starts sounding at; unknown until the first read. */
+    /** Position in the media this stream starts sounding at, chosen once it opens. */
     public double startTime() {
         return startTime;
     }
@@ -146,7 +165,8 @@ public final class StreamAudio implements AudioStream {
      * Wall-clock position of this stream's audible timeline, counted from the first read. The
      * engine consumes at the playback rate, so wall time tracks the speakers - while the data
      * written into OpenAL runs up to about one queued buffer ahead of the play cursor and must
-     * not be mistaken for what is audible right now.
+     * not be mistaken for what is audible right now. Silence padded over a data gap is trimmed
+     * off the following content, so it never shifts this timeline either.
      */
     public double playedSeconds() {
         long base = firstReadAt;
@@ -161,58 +181,78 @@ public final class StreamAudio implements AudioStream {
     @Override
     public ByteBuffer read(int requestedBytes) throws IOException {
         prepareFirstRead();
-        return readPcm(requestedBytes, 0, true);
+        return readPcm(requestedBytes);
     }
 
-    /**
-     * Chooses where the stream starts sounding. Only now, when the engine actually pulls samples,
-     * is it known how much media time passed since the decoder opened; everything decoded before
-     * this point is trimmed away so the first sample handed out matches the caller's reference at
-     * this very moment (rather than at construction time, which can be a second earlier).
-     */
+    /** Records when the engine actually pulled sound, for the wall-clock position estimate. */
     private void prepareFirstRead() {
         if (started) return;
         started = true;
-        double catchUp = forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration);
-        double discarded = 0.0;
-        try {
-            discarded = discardBufferedSeconds(catchUp);
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-        }
-        startTime = wrap(currentStart + discarded, duration);
         firstReadAt = System.currentTimeMillis();
-        ZCinemaLog.log("audio", "first read: start=%.3fs catchUp=%.3fs discarded=%.3fs",
-                startTime, catchUp, discarded);
+        double engineDelay = forwardDelta(wrap(startSeconds.getAsDouble(), duration), startTime, duration);
+        ZCinemaLog.log("audio", "first read start=%.3fs engineDelay=%.3fs buffered=%.3fs",
+                startTime, engineDelay, bufferedSeconds());
     }
 
-    private ByteBuffer readPcm(int requestedBytes, int waitMillis, boolean padSilence) throws IOException {
+    private ByteBuffer readPcm(int requestedBytes) throws IOException {
         ByteBuffer output = ByteBuffer.allocateDirect(
                 Math.max(1, Math.min(requestedBytes, bytesForMillis(MAX_READ_MILLIS))))
                 .order(ByteOrder.LITTLE_ENDIAN);
         try {
             while (output.hasRemaining() && !closed) {
-                if (pending.hasRemaining()) {
-                    int count = Math.min(output.remaining(), pending.remaining());
-                    int limit = pending.limit();
-                    pending.limit(pending.position() + count);
-                    output.put(pending);
-                    pending.limit(limit);
-                    continue;
+                if (!pending.hasRemaining()) {
+                    ByteBuffer next = decoded.poll();
+                    if (next == null) break;
+                    bufferedBytes.addAndGet(-next.remaining());
+                    pending = next;
                 }
-                ByteBuffer next = decoded.poll();
-                if (next == null) break;
-                bufferedBytes.addAndGet(-next.remaining());
-                pending = next;
+                if (skipHealedFrames(pending)) continue;
+                if (!pending.hasRemaining()) continue;
+                int count = Math.min(output.remaining(), pending.remaining());
+                int limit = pending.limit();
+                pending.limit(pending.position() + count);
+                output.put(pending);
+                pending.limit(limit);
             }
-            if (padSilence && !closed) {
+            if (output.hasRemaining() && !closed) {
+                int frameSize = Math.max(1, format.getFrameSize());
+                int silentFrames = output.remaining() / frameSize;
                 while (output.hasRemaining()) output.put((byte) 0);
+                if (silentFrames > 0) {
+                    healFrames += silentFrames;
+                    logStarvation();
+                }
             }
             return output.flip();
         } catch (Throwable error) {
             if (error instanceof IOException io) throw io;
             throw new IOException("Failed to read screen audio", error);
         }
+    }
+
+    /**
+     * Drops content the stream has already moved past: when the decoder runs dry, the silence
+     * handed to the engine plays in place of the samples that should have been there, so the next
+     * samples have to be trimmed by exactly as much. Without this the whole sound would stay
+     * behind the picture for good and nothing in the byte stream would show it.
+     */
+    private boolean skipHealedFrames(ByteBuffer buffer) {
+        if (healFrames <= 0 || !buffer.hasRemaining()) return false;
+        int frameSize = Math.max(1, format.getFrameSize());
+        int frames = Math.min(healFrames, buffer.remaining() / frameSize);
+        if (frames <= 0) return false;
+        buffer.position(buffer.position() + frames * frameSize);
+        healFrames -= frames;
+        return true;
+    }
+
+    private void logStarvation() {
+        long now = System.currentTimeMillis();
+        if (now - lastStarvationLogAt < 2_000L) return;
+        lastStarvationLogAt = now;
+        int framesPerSecond = Math.max(1, Math.round(format.getSampleRate()));
+        ZCinemaLog.log("audio", "starved: padded silence, heal pending=%dms buffered=%.3fs",
+                Math.round(healFrames * 1000.0 / framesPerSecond), bufferedSeconds());
     }
 
     private void decodeAudio() {
@@ -254,6 +294,26 @@ public final class StreamAudio implements AudioStream {
                 && System.currentTimeMillis() < deadline) {
             TimeUnit.MILLISECONDS.sleep(10L);
         }
+    }
+
+    /**
+     * Keeps buffering until the decoded queue can cover the engine's prefill <em>and</em> the
+     * media time this stream has to catch up, which is exactly what the start trim about to run
+     * will drop from the head. Bounded by the same timeout as the plain startup wait.
+     */
+    private void waitForCatchUpBuffer() throws InterruptedException {
+        long deadline = System.currentTimeMillis() + STARTUP_WAIT_TIMEOUT_MILLIS;
+        double prefillSeconds = STARTUP_BUFFER_MILLIS / 1000.0;
+        while (!closed && !decoderEnded && System.currentTimeMillis() < deadline
+                && bufferedSeconds() < prefillSeconds + currentCatchUp()) {
+            TimeUnit.MILLISECONDS.sleep(10L);
+        }
+    }
+
+    /** Media time between where the decoder opened and where the timeline is now. */
+    private double currentCatchUp() {
+        return Math.min(MAX_CATCH_UP_SECONDS,
+                forwardDelta(wrap(startSeconds.getAsDouble(), duration), currentStart, duration));
     }
 
     /** Throws away already decoded PCM so the stream starts where the video is. */
@@ -413,5 +473,10 @@ public final class StreamAudio implements AudioStream {
         int frameSize = Math.max(1, format.getFrameSize());
         float frameRate = format.getFrameRate() > 0 ? format.getFrameRate() : format.getSampleRate();
         return Math.max(1, Math.round(frameRate) * frameSize);
+    }
+
+    /** Decoded PCM currently waiting for the engine, in media seconds. */
+    private double bufferedSeconds() {
+        return bufferedBytes.get() / (double) bytesPerSecond();
     }
 }

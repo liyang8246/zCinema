@@ -115,9 +115,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
                 return failedStream();
             }
             stream = opened;
-            ZCinemaLog.log("audio", "stream built screen=%s referenceAt=%.3fs took=%dms "
-                            + "(start chosen on the engine's first read)",
-                    pos.toShortString(), session.audioReferenceSeconds(),
+            ZCinemaLog.log("audio", "stream built screen=%s start=%.3fs referenceAt=%.3fs took=%dms",
+                    pos.toShortString(), opened.startTime(), session.audioReferenceSeconds(),
                     System.currentTimeMillis() - started);
             return opened;
         } catch (Exception error) {
