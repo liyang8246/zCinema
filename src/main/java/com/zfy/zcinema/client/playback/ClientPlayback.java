@@ -7,7 +7,7 @@ import com.zfy.zcinema.net.packets.S2CStatePacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.neoforged.neoforge.network.PacketDistributor;
+import com.zfy.zcinema.net.ModNetworking;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -150,12 +150,12 @@ public final class ClientPlayback {
     public static void seek(BlockPos pos, double seconds) {
         PlaybackSession session = SESSIONS.get(pos);
         if (session != null) session.requestSeek(seconds);
-        PacketDistributor.sendToServer(new C2SControlPacket(pos, C2SControlPacket.Action.SEEK,
+        ModNetworking.sendToServer(new C2SControlPacket(pos, C2SControlPacket.Action.SEEK,
                 (long) (seconds * 1000L)));
     }
 
     public static void control(BlockPos pos, C2SControlPacket.Action action) {
-        PacketDistributor.sendToServer(new C2SControlPacket(pos, action, 0L));
+        ModNetworking.sendToServer(new C2SControlPacket(pos, action, 0L));
     }
 
     /** S2C state arrived: refresh the client mirror, the session picks it up on its next frame. */

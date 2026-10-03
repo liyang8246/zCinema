@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "zcinema",
+  "version": "${version}",
+  "name": "Z Cinema",
+  "description": "A Create-free Fabric mod for watching MP4 direct links together on a server. Every player pulls the same stream from the source URL and stays in sync through play/pause/seek/stall events.",
+  "authors": [
+    "LiYang"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "accessWidener": "zcinema.accesswidener",
+  "entrypoints": {
+    "main": [
+      "com.zfy.zcinema.ZCinema"
+    ],
+    "client": [
+      "com.zfy.zcinema.client.ZCinemaClient"
+    ]
+  },
+  "mixins": [
+    "zcinema.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

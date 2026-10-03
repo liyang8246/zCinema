@@ -26,7 +26,7 @@ public final class ScreenDetector {
     private ScreenDetector() {}
 
     public static boolean isScreenMaterial(BlockState state) {
-        return state.is(Blocks.BLACK_CONCRETE) || state.is(ModBlocks.SCREEN.get());
+        return state.is(Blocks.BLACK_CONCRETE) || state.is(ModBlocks.SCREEN);
     }
 
     /**

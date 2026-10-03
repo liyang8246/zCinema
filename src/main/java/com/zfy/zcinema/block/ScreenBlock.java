@@ -80,7 +80,7 @@ public class ScreenBlock extends Block implements EntityBlock {
 
     @Override
     public @Nullable <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        if (type != ModBlockEntities.SCREEN_BE.get()) return null;
+        if (type != ModBlockEntities.SCREEN_BE) return null;
         if (level.isClientSide()) return null;
         return (lvl, pos, st, be) -> ((CinemaScreenBlockEntity) be).serverTick();
     }

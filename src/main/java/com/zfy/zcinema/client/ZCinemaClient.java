@@ -1,62 +1,33 @@
 package com.zfy.zcinema.client;
 
 import com.zfy.zcinema.ZCinema;
-import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.config.ClientConfig;
 import com.zfy.zcinema.client.gui.CinemaScreenUI;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.render.CinemaScreenRenderer;
+import com.zfy.zcinema.net.packets.S2CStatePacket;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.registry.ModMenus;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
-import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.common.NeoForge;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
 
-@EventBusSubscriber(modid = ZCinema.MODID, value = Dist.CLIENT)
-public final class ZCinemaClient {
-    private ZCinemaClient() {}
+public final class ZCinemaClient implements ClientModInitializer {
+    @Override
+    public void onInitializeClient() {
+        ClientConfig.load();
 
-    public static void init(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
-        NeoForge.EVENT_BUS.register(new ClientGameEvents());
-        NeoForge.EVENT_BUS.register(new CrosshairHider());
-    }
+        BlockEntityRenderers.register(ModBlockEntities.SCREEN_BE, CinemaScreenRenderer::new);
+        MenuScreens.register(ModMenus.SCREEN, CinemaScreenUI::create);
 
-    @SubscribeEvent
-    static void onClientSetup(FMLClientSetupEvent event) {
+        ClientPlayNetworking.registerGlobalReceiver(S2CStatePacket.TYPE, (payload, context) ->
+                context.client().execute(() -> ClientPlayback.handleState(payload)));
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> ClientPlayback.tick());
+        ClientTickEvents.END_CLIENT_TICK.register(client -> CrosshairHider.tick());
+
         ZCinema.LOGGER.info("Z Cinema client ready");
-    }
-
-    @SubscribeEvent
-    static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
-        event.registerBlockEntityRenderer(ModBlockEntities.SCREEN_BE.get(), CinemaScreenRenderer::new);
-    }
-
-    @SubscribeEvent
-    static void onRegisterScreens(RegisterMenuScreensEvent event) {
-        event.register(ModMenus.SCREEN.get(), CinemaScreenUI::create);
-    }
-
-    /** Game bus events: per-tick playback driving and cleanup when the world goes away. */
-    public static final class ClientGameEvents {
-        @SubscribeEvent
-        public void onClientTick(ClientTickEvent.Post event) {
-            ClientPlayback.tick();
-        }
-
-        @SubscribeEvent
-        public void onLevelUnload(net.neoforged.neoforge.event.level.LevelEvent.Unload event) {
-            if (event.getLevel().isClientSide()) {
-                ClientPlayback.clearAll();
-            }
-        }
     }
 }

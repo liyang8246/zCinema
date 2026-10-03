@@ -1,8 +1,6 @@
 plugins {
-    id 'java-library'
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
     id 'maven-publish'
-    id 'net.neoforged.moddev' version '2.0.134'
-    id 'idea'
 }
 
 version = mod_version
@@ -12,73 +10,28 @@ base {
     archivesName = mod_id
 }
 
-// Mojang ships Java 21 to end users in 1.21.11, so mods should target Java 21.
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
 
-neoForge {
-    // Specify the version of NeoForge to use.
-    version = project.neo_version
-
-    parchment {
-        mappingsVersion = "2024.11.17"
-        minecraftVersion = "1.21.1"
-    }
-
+loom {
     runs {
         client {
-            client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            runDir "run-fabric"
         }
-
         server {
-            server()
-            programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-        }
-
-        data {
-            data()
-            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
-        }
-
-        configureEach {
-            systemProperty 'forge.logging.markers', 'REGISTRIES'
-            logLevel = org.slf4j.event.Level.DEBUG
-            // Keep the 1.21.1 dev world away from the 1.21.11 one the main branch uses.
-            gameDirectory = project.file('run-1.21.1')
-        }
-    }
-
-    mods {
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
+            runDir "run-fabric"
         }
     }
 }
-
-sourceSets.main.resources {
-    srcDir 'src/generated/resources'
-}
-
-configurations {
-    runtimeClasspath.extendsFrom localRuntime
-    javacvRaw
-    bytedecoBundle
-}
-
-def currentOs = System.getProperty("os.name").toLowerCase(Locale.ROOT)
-def currentArch = System.getProperty("os.arch").toLowerCase(Locale.ROOT)
-def arm64 = currentArch.contains("aarch64") || currentArch.contains("arm64")
-def bytedecoPlatform = currentOs.contains("win") ? (arm64 ? "windows-arm64" : "windows-x86_64") :
-        currentOs.contains("mac") ? (arm64 ? "macosx-arm64" : "macosx-x86_64") :
-        (arm64 ? "linux-arm64" : "linux-x86_64")
-
-def bundledPlatforms = ((project.findProperty('bundled_platforms') ?:
-        'windows-x86_64,linux-x86_64,linux-arm64,macosx-x86_64,macosx-arm64')
-        .toString().split(',')).collect { it.trim() }.findAll { !it.isEmpty() }
 
 repositories {
     mavenCentral()
+}
+
+configurations {
+    javacvRaw
+    bytedecoBundle
 }
 
 // JavaCV: strip module-info so the jar can be shaded/merged, then merge every requested
@@ -95,27 +48,31 @@ def strippedJavaCv = tasks.register("strippedJavaCv", Jar) {
     }
 }
 
+def currentOs = System.getProperty("os.name").toLowerCase(Locale.ROOT)
+def currentArch = System.getProperty("os.arch").toLowerCase(Locale.ROOT)
+def arm64 = currentArch.contains("aarch64") || currentArch.contains("arm64")
+def bytedecoPlatform = currentOs.contains("win") ? (arm64 ? "windows-arm64" : "windows-x86_64") :
+        currentOs.contains("mac") ? (arm64 ? "macosx-arm64" : "macosx-x86_64") :
+        (arm64 ? "linux-arm64" : "linux-x86_64")
+
+def bundledPlatforms = ((project.findProperty('bundled_platforms') ?:
+        'windows-x86_64,linux-x86_64,linux-arm64,macosx-x86_64,macosx-arm64')
+        .toString().split(',')).collect { it.trim() }.findAll { !it.isEmpty() }
+
 dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
     javacvRaw("org.bytedeco:javacv:${javacv_version}") { transitive = false }
     implementation(files(strippedJavaCv))
     implementation("org.bytedeco:javacpp:${javacv_version}")
     implementation("org.bytedeco:ffmpeg:${ffmpeg_version}")
-    localRuntime("org.bytedeco:javacpp:${javacv_version}")
-    localRuntime("org.bytedeco:ffmpeg:${ffmpeg_version}")
-    if (bundledPlatforms.contains(bytedecoPlatform)) {
-        localRuntime("org.bytedeco:javacpp:${javacv_version}:${bytedecoPlatform}")
-        localRuntime("org.bytedeco:ffmpeg:${ffmpeg_version}:${bytedecoPlatform}")
-    }
-
-    // Minecraft 1.21.8 and older only puts mods (and jars listed here) into the game's module
-    // layer, so the decoder libraries have to be declared for dev runs explicitly.
-    add('additionalRuntimeClasspath', files(strippedJavaCv))
-    add('additionalRuntimeClasspath', "org.bytedeco:javacpp:${javacv_version}")
-    add('additionalRuntimeClasspath', "org.bytedeco:ffmpeg:${ffmpeg_version}")
-    if (bundledPlatforms.contains(bytedecoPlatform)) {
-        add('additionalRuntimeClasspath', "org.bytedeco:javacpp:${javacv_version}:${bytedecoPlatform}")
-        add('additionalRuntimeClasspath', "org.bytedeco:ffmpeg:${ffmpeg_version}:${bytedecoPlatform}")
-    }
+    // Native decoders for the current dev platform; the released jar bundles its own set below.
+    runtimeOnly("org.bytedeco:javacpp:${javacv_version}:${bytedecoPlatform}")
+    runtimeOnly("org.bytedeco:ffmpeg:${ffmpeg_version}:${bytedecoPlatform}")
 
     bytedecoBundle("org.bytedeco:javacpp:${javacv_version}")
     bytedecoBundle("org.bytedeco:ffmpeg:${ffmpeg_version}")
@@ -152,28 +109,12 @@ tasks.named('jar', Jar).configure {
     }
 }
 
-// This block of code expands all declared replace properties in the specified resource targets.
-var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
-    var replaceProperties = [
-            minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version            : neo_version,
-            neo_version_range      : neo_version_range,
-            loader_version_range   : loader_version_range,
-            mod_id                 : mod_id,
-            mod_name               : mod_name,
-            mod_license             : mod_license,
-            mod_version             : mod_version,
-            mod_authors            : mod_authors,
-            mod_description        : mod_description
-    ]
-    inputs.properties replaceProperties
-    expand replaceProperties
-    from "src/main/templates"
-    into "build/generated/sources/modMetadata"
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
 }
-sourceSets.main.resources.srcDir generateModMetadata
-neoForge.ideSyncTask generateModMetadata
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
@@ -187,12 +128,5 @@ publishing {
     }
     repositories {
         maven { url "file://${project.projectDir}/repo" }
-    }
-}
-
-idea {
-    module {
-        downloadSources = true
-        downloadJavadoc = true
     }
 }

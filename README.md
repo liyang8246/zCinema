@@ -1,6 +1,6 @@
 # Z Cinema
 
-一个 **NeoForge 1.21.11** 的联机放映 Mod：不依赖机械动力（Create），
+一个 **Fabric 1.21.1** 的联机放映 Mod：不依赖机械动力（Create），
 支持 **MP4 直链与解析接口链接**，让服务器里的小伙伴一起看视频。
 
 灵感来自 [Create Cinema](https://github.com/Abuous/Createcinema)，
@@ -70,8 +70,8 @@
 
 ## 使用方法
 
-1. 安装 [NeoForge 1.21.11](https://neoforged.net/)（21.11.x）。
-2. 把 `zcinema-<版本>.jar` 丢进 `mods/`（服务端和客户端都装）。
+1. 安装 [Fabric Loader](https://fabricmc.net/)（0.16+）与 [Fabric API](https://modrinth.com/mod/fabric-api)（1.21.1）。
+2. 把 `zcinema-<版本>.jar` 丢进 `mods/`（服务端和客户端都装，Fabric API 也是两端都要）。
 3. 用**黑色混凝土**搭一块平整的墙（比如 9x5），**手持木棍 + 潜行 + 右键**墙上任意一块
    —— 整面墙会变成外观相同的「屏幕方块」。
 4. 对屏幕**木棍 + 潜行 + 右键**打开控制面板 → 粘贴视频链接 →「载入」→「播放」。
@@ -86,7 +86,7 @@
 
 ## 配置
 
-文件位于 `config/zcinema-common.toml` 与 `config/zcinema-client.toml`：
+文件位于 `config/zcinema-common.json` 与 `config/zcinema-client.json`：
 
 | 配置 | 默认 | 说明 |
 | --- | --- | --- |
@@ -97,22 +97,30 @@
 | `maxFrameWidth/Height` | 1920/1080 | 解码缩放上限 |
 | `audioDistance` | 48 | 声音传播距离 |
 
+> 服务端配置在开服时读取，改完重启服务器生效；客户端配置在启动时读取。
+
 ## 构建
 
 ```bash
 ./gradlew build
 ```
 
-产物在 `build/libs/`。默认捆绑 Windows/Linux/macOS 的 FFmpeg 原生库
-（约 100MB+）；想要精简可以用
-`./gradlew build -Pbundled_platforms=windows-x86_64`。
+产物在 `build/libs/`。`bundled_platforms` 决定打进 jar 的 FFmpeg 原生库，
+当前是 `windows-x86_64`（只有客户端需要解码）；想要全平台包：
 
-Java 21 与 Gradle 9.2+ 由 wrapper 自动处理。
+```bash
+./gradlew build -Pbundled_platforms=windows-x86_64,linux-x86_64,linux-arm64,macosx-x86_64,macosx-arm64
+```
+
+开发运行用 `./gradlew runClient` / `./gradlew runServer`，运行目录是 `run-fabric/`。
+
+Java 21 与 Gradle 9.2 由 wrapper 自动处理，Fabric Loom 会下载 Minecraft 与映射。
 
 ## 第三方依赖
 
 - [JavaCV / JavaCPP / FFmpeg](https://github.com/bytedeco/javacv)（Apache-2.0）：本地解码 MP4 的画面与声音
-- Minecraft / NeoForge：平台本体
+- [Fabric Loader / Fabric API](https://fabricmc.net/)：平台本体
+- Minecraft：平台本体
 
 ## 许可
 

@@ -1,54 +1,42 @@
 package com.zfy.zcinema.client.config;
 
-import net.neoforged.neoforge.common.ModConfigSpec;
-import org.apache.commons.lang3.tuple.Pair;
+import com.google.gson.JsonObject;
+import com.zfy.zcinema.config.JsonConfig;
 
-/** Client side knobs for decoding, buffering, sync tolerance and audio reach. */
+/**
+ * Client side knobs for decoding, buffering, sync tolerance and audio reach. Loaded on client
+ * start from {@code config/zcinema-client.json}.
+ */
 public final class ClientConfig {
-    public static final ModConfigSpec SPEC;
-    public static final ClientConfig INSTANCE;
+    private static final String FILE_NAME = "zcinema-client.json";
 
-    public final ModConfigSpec.IntValue maxFrameWidth;
-    public final ModConfigSpec.IntValue maxFrameHeight;
-    public final ModConfigSpec.DoubleValue bufferSeconds;
-    public final ModConfigSpec.IntValue audioDistance;
-    public final ModConfigSpec.DoubleValue hardResyncSeconds;
+    /** Frames wider than this are downscaled while decoding (saves bandwidth/CPU). */
+    public static int maxFrameWidth = 1920;
+    /** Frames taller than this are downscaled while decoding. */
+    public static int maxFrameHeight = 1080;
+    /** How far ahead of the shared clock this client decodes. */
+    public static double bufferSeconds = 1.5;
+    /** If the shared clock and local playback diverge by more than this, the stream seeks. */
+    public static double hardResyncSeconds = 3.0;
+    /** How far away the screen audio can be heard. */
+    public static int audioDistance = 48;
 
-    static {
-        Pair<ClientConfig, ModConfigSpec> pair = new ModConfigSpec.Builder().configure(ClientConfig::new);
-        INSTANCE = pair.getLeft();
-        SPEC = pair.getRight();
-    }
+    private ClientConfig() {}
 
-    private ClientConfig(ModConfigSpec.Builder builder) {
-        builder.push("stream");
-        maxFrameWidth = builder
-                .comment("Frames wider than this are downscaled while decoding (saves bandwidth/CPU).")
-                .defineInRange("maxFrameWidth", 1920, 320, 7680);
-        maxFrameHeight = builder
-                .comment("Frames taller than this are downscaled while decoding.")
-                .defineInRange("maxFrameHeight", 1080, 240, 4320);
-        bufferSeconds = builder
-                .comment("How far ahead of the shared clock this client decodes. Smaller keeps memory"
-                        + " low, larger rides out network hiccups.")
-                .defineInRange("bufferSeconds", 1.5, 0.25, 8.0);
-        builder.pop();
+    public static void load() {
+        JsonObject root = JsonConfig.read(FILE_NAME);
+        maxFrameWidth = JsonConfig.getInt(root, "maxFrameWidth", maxFrameWidth, 320, 7680);
+        maxFrameHeight = JsonConfig.getInt(root, "maxFrameHeight", maxFrameHeight, 240, 4320);
+        bufferSeconds = JsonConfig.getDouble(root, "bufferSeconds", bufferSeconds, 0.25, 8.0);
+        hardResyncSeconds = JsonConfig.getDouble(root, "hardResyncSeconds", hardResyncSeconds, 0.5, 30.0);
+        audioDistance = JsonConfig.getInt(root, "audioDistance", audioDistance, 4, 256);
 
-        builder.push("sync");
-        hardResyncSeconds = builder
-                .comment("If the shared clock and local playback diverge by more than this, the stream"
-                        + " seeks instead of waiting for the clock to catch up.")
-                .defineInRange("hardResyncSeconds", 3.0, 0.5, 30.0);
-        builder.pop();
-
-        builder.push("audio");
-        audioDistance = builder
-                .comment("How far away the screen audio can be heard.")
-                .defineInRange("audioDistance", 48, 4, 256);
-        builder.pop();
-    }
-
-    private ClientConfig() {
-        this(new ModConfigSpec.Builder());
+        JsonObject out = root.deepCopy();
+        out.addProperty("maxFrameWidth", maxFrameWidth);
+        out.addProperty("maxFrameHeight", maxFrameHeight);
+        out.addProperty("bufferSeconds", bufferSeconds);
+        out.addProperty("hardResyncSeconds", hardResyncSeconds);
+        out.addProperty("audioDistance", audioDistance);
+        JsonConfig.write(FILE_NAME, out);
     }
 }

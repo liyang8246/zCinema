@@ -3,9 +3,10 @@ package com.zfy.zcinema.event;
 import com.zfy.zcinema.block.ScreenBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.gui.CinemaScreenMenu;
+import com.zfy.zcinema.registry.ModBlocks;
 import com.zfy.zcinema.screen.ScreenArea;
 import com.zfy.zcinema.screen.ScreenDetector;
-import com.zfy.zcinema.registry.ModBlocks;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -16,12 +17,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -37,60 +33,51 @@ import net.minecraft.world.phys.Vec3;
  * stray right-click can never dismantle a wall.
  *
  * <p>Right-clicking a screen without a stick stays vanilla, so blocks still place against it.
- * The handler runs on both sides: the server does the work, the client cancels its own prediction
- * so it does not place a block or try the other hand after the gesture.
+ * The client lets its interaction through untouched; the server performs the gesture and returns
+ * SUCCESS so vanilla does not also run for that hand.
  */
 public final class PlayerInteractEvents {
     private PlayerInteractEvents() {}
 
     public static void register() {
-        NeoForge.EVENT_BUS.register(new PlayerInteractEvents());
-    }
+        UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
+            BlockPos pos = hitResult.getBlockPos();
+            BlockState state = level.getBlockState(pos);
+            if (!ScreenDetector.isScreenMaterial(state)) return InteractionResult.PASS;
 
-    @SubscribeEvent
-    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        Player player = event.getEntity();
-        if (player == null) return;
-        Level level = event.getLevel();
-        BlockPos pos = event.getPos();
-        BlockState state = level.getBlockState(pos);
-        if (!ScreenDetector.isScreenMaterial(state)) return;
+            // The stick is part of every gesture; without it the screen is just a wall.
+            if (!holdsStick(player, hand)) return InteractionResult.PASS;
+            if (!player.isShiftKeyDown()) return InteractionResult.PASS;
 
-        // The stick is part of every gesture; without it the screen is just a wall.
-        if (!holdsStick(player, event.getHand())) return;
-        if (!player.isShiftKeyDown()) return;
+            if (!(level instanceof ServerLevel serverLevel)) {
+                // Client side only predicts the gesture; the server owns what actually happens.
+                return InteractionResult.PASS;
+            }
 
-        if (!(level instanceof ServerLevel serverLevel)) {
-            // Client side only predicts the gesture; the server owns what actually happens.
-            consume(event);
-            return;
-        }
+            Direction hitFace = hitResult.getDirection();
+            Vec3 eye = player.getEyePosition();
+            ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
+            if (area == null) {
+                tell(player, "message.zcinema.not_flat");
+                return InteractionResult.SUCCESS;
+            }
 
-        Direction hitFace = event.getHitVec() instanceof BlockHitResult hit ? hit.getDirection() : Direction.UP;
-        Vec3 eye = player.getEyePosition();
-        ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
-        if (area == null) {
-            tell(player, "message.zcinema.not_flat");
-            consume(event);
-            return;
-        }
+            CinemaScreenBlockEntity existing = findScreen(serverLevel, area);
+            if (existing != null) {
+                openPanel(player, existing);
+                return InteractionResult.SUCCESS;
+            }
 
-        CinemaScreenBlockEntity existing = findScreen(serverLevel, area);
-        if (existing != null) {
-            openPanel(player, existing);
-            consume(event);
-            return;
-        }
-
-        // A fresh wall: turn the whole rectangle into screen blocks, then let the clicked block
-        // carry the playback state.
-        installScreenBlocks(serverLevel, area);
-        if (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
-            be.setScreenArea(area);
-            be.broadcastState();
-        }
-        tell(player, "message.zcinema.created", area.screenWidth(), area.screenHeight());
-        consume(event);
+            // A fresh wall: turn the whole rectangle into screen blocks, then let the clicked block
+            // carry the playback state.
+            installScreenBlocks(serverLevel, area);
+            if (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
+                be.setScreenArea(area);
+                be.broadcastState();
+            }
+            tell(player, "message.zcinema.created", area.screenWidth(), area.screenHeight());
+            return InteractionResult.SUCCESS;
+        });
     }
 
     /** Replaces every block of the detected rectangle that is screen material with the screen block. */
@@ -98,7 +85,7 @@ public final class PlayerInteractEvents {
         Direction facing = area.normal().getAxis().isHorizontal()
                 ? area.normal().getOpposite()
                 : Direction.NORTH;
-        BlockState screen = ModBlocks.SCREEN.get().defaultBlockState().setValue(ScreenBlock.FACING, facing);
+        BlockState screen = ModBlocks.SCREEN.defaultBlockState().setValue(ScreenBlock.FACING, facing);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = area.min().getX(); x <= area.max().getX(); x++) {
             for (int y = area.min().getY(); y <= area.max().getY(); y++) {
@@ -107,7 +94,7 @@ public final class PlayerInteractEvents {
                     BlockState current = level.getBlockState(cursor);
                     // Only the material the detector found is converted: a rectangle drawn around an
                     // irregular wall must not swallow whatever else stands in its corners.
-                    if (ScreenDetector.isScreenMaterial(current) && !current.is(ModBlocks.SCREEN.get())) {
+                    if (ScreenDetector.isScreenMaterial(current) && !current.is(ModBlocks.SCREEN)) {
                         level.setBlockAndUpdate(cursor, screen);
                     }
                 }
@@ -135,11 +122,6 @@ public final class PlayerInteractEvents {
         return null;
     }
 
-    private static void consume(PlayerInteractEvent.RightClickBlock event) {
-        event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.CONSUME);
-    }
-
     private static boolean holdsStick(Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         return stack.is(Items.STICK);
@@ -152,7 +134,7 @@ public final class PlayerInteractEvents {
         if (server.containerMenu instanceof CinemaScreenMenu menu && menu.pos().equals(be.getBlockPos())) {
             return;
         }
-        server.openMenu(be, buffer -> buffer.writeBlockPos(be.getBlockPos()));
+        server.openMenu(be);
     }
 
     private static void tell(Player player, String key, Object... args) {

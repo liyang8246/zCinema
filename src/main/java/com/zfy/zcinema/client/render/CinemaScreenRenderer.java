@@ -31,13 +31,14 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
      * The quad can span a whole wall, but vanilla only knows the one block the state lives in:
      * when a viewer stands close, that block leaves their frustum and the entire picture is culled.
      * Claiming the full rectangle keeps the screen visible from anywhere in front of it.
+     *
+     * <p>Vanilla has no {@code getRenderBoundingBox} hook - this one only feeds the renderer's own
+     * visibility test below.
      */
-    @Override
-    public AABB getRenderBoundingBox(CinemaScreenBlockEntity blockEntity) {
+    private static AABB renderBounds(CinemaScreenBlockEntity blockEntity) {
         ScreenArea area = blockEntity.screenArea();
-        if (area == null) return BlockEntityRenderer.super.getRenderBoundingBox(blockEntity);
-        BlockPos min = area.min();
-        BlockPos max = area.max();
+        BlockPos min = area != null ? area.min() : blockEntity.getBlockPos();
+        BlockPos max = area != null ? area.max() : blockEntity.getBlockPos();
         return new AABB(min.getX(), min.getY(), min.getZ(),
                 max.getX() + 1.0, max.getY() + 1.0, max.getZ() + 1.0).inflate(1.0);
     }
@@ -50,7 +51,7 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
         double diagonal = Math.sqrt(area.width() * area.width() + area.height() * area.height()
                 + area.depth() * area.depth());
         double reach = 128.0 + diagonal;
-        return getRenderBoundingBox(blockEntity).distanceToSqr(cameraPos) <= reach * reach;
+        return renderBounds(blockEntity).distanceToSqr(cameraPos) <= reach * reach;
     }
 
     /**

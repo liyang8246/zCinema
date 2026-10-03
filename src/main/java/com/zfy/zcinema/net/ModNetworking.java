@@ -1,47 +1,54 @@
 package com.zfy.zcinema.net;
 
-import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.C2SHealthPacket;
 import com.zfy.zcinema.net.packets.C2SReportMediaPacket;
 import com.zfy.zcinema.net.packets.C2SSetUrlPacket;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
-import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import net.minecraft.world.phys.Vec3;
 
-@EventBusSubscriber(modid = ZCinema.MODID)
+/**
+ * Fabric side of the wire protocol. The packet records themselves are plain vanilla
+ * {@link CustomPacketPayload}s, so only registration, dispatch and addressing live here.
+ */
 public final class ModNetworking {
+    private static final double CONTROL_RANGE_SQR = 128.0 * 128.0;
+
     private ModNetworking() {}
 
-    @SubscribeEvent
-    public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(ZCinema.MODID);
+    /** Both sides: register the packet types. Must run before any packet is sent. */
+    public static void registerCommon() {
+        PayloadTypeRegistry.playC2S().register(C2SSetUrlPacket.TYPE, C2SSetUrlPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(C2SControlPacket.TYPE, C2SControlPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(C2SReportMediaPacket.TYPE, C2SReportMediaPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(C2SHealthPacket.TYPE, C2SHealthPacket.STREAM_CODEC);
 
-        registrar.playToServer(C2SSetUrlPacket.TYPE, C2SSetUrlPacket.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
-        registrar.playToServer(C2SControlPacket.TYPE, C2SControlPacket.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
-        registrar.playToServer(C2SReportMediaPacket.TYPE, C2SReportMediaPacket.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
-        registrar.playToServer(C2SHealthPacket.TYPE, C2SHealthPacket.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleC2S(payload, context)));
-
-        // Only ever received on the client; the lambda is what pulls the client classes in.
-        registrar.playToClient(S2CStatePacket.TYPE, S2CStatePacket.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() ->
-                        com.zfy.zcinema.client.playback.ClientPlayback.handleState(payload)));
+        // Only ever received on the client; the client entrypoint registers the receiver.
+        PayloadTypeRegistry.playS2C().register(S2CStatePacket.TYPE, S2CStatePacket.STREAM_CODEC);
     }
 
-    private static void handleC2S(Object payload, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player)) return;
-        if (!(player.level() instanceof ServerLevel server)) return;
+    /** Server side: C2S receivers. */
+    public static void registerServerHandlers() {
+        ServerPlayNetworking.registerGlobalReceiver(C2SSetUrlPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> handleC2S(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(C2SControlPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> handleC2S(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(C2SReportMediaPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> handleC2S(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(C2SHealthPacket.TYPE, (payload, context) ->
+                context.server().execute(() -> handleC2S(payload, context.player())));
+    }
+
+    private static void handleC2S(CustomPacketPayload payload, ServerPlayer player) {
+        if (player == null) return;
         var pos = switch (payload) {
             case C2SSetUrlPacket p -> p.pos();
             case C2SControlPacket p -> p.pos();
@@ -50,8 +57,8 @@ public final class ModNetworking {
             default -> null;
         };
         if (pos == null) return;
-        if (player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pos)) > 128 * 128) return;
-        if (server.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
+        if (player.distanceToSqr(Vec3.atCenterOf(pos)) > CONTROL_RANGE_SQR) return;
+        if (player.level().getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
             switch (payload) {
                 case C2SSetUrlPacket p -> be.setUrl(player, p.url());
                 case C2SControlPacket p -> be.control(player, p.action(), p.positionMs());
@@ -63,8 +70,15 @@ public final class ModNetworking {
         }
     }
 
-    public static void sendToPlayersTrackingChunk(ServerLevel level, net.minecraft.core.BlockPos pos,
-                                                  net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
-        PacketDistributor.sendToPlayersTrackingChunk(level, new net.minecraft.world.level.ChunkPos(pos), payload);
+    /** Client side helper: send one payload to the server. */
+    public static void sendToServer(CustomPacketPayload payload) {
+        ClientPlayNetworking.send(payload);
+    }
+
+    /** Send a payload to every player within {@code radius} of {@code center}. */
+    public static void sendToPlayersNear(ServerLevel level, Vec3 center, double radius, CustomPacketPayload payload) {
+        for (ServerPlayer player : PlayerLookup.around(level, center, radius)) {
+            ServerPlayNetworking.send(player, payload);
+        }
     }
 }

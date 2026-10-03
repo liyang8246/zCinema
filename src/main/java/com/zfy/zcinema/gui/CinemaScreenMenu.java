@@ -20,7 +20,7 @@ public class CinemaScreenMenu extends AbstractContainerMenu {
     }
 
     public CinemaScreenMenu(int id, Inventory inventory, BlockPos pos) {
-        super(ModMenus.SCREEN.get(), id);
+        super(ModMenus.SCREEN, id);
         this.pos = pos;
     }
 

@@ -5,6 +5,7 @@ import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.config.ClientConfig;
 import com.zfy.zcinema.client.playback.PlaybackSession;
+import net.fabricmc.fabric.api.client.sound.v1.FabricSoundInstance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractSoundInstance;
 import net.minecraft.client.resources.sounds.Sound;
@@ -34,7 +35,7 @@ import java.util.concurrent.Executors;
  * reopens it at the current position. That is what keeps it glued to the picture instead of
  * quietly drifting behind it.
  */
-class CinemaSoundInstance extends AbstractSoundInstance implements TickableSoundInstance {
+class CinemaSoundInstance extends AbstractSoundInstance implements TickableSoundInstance, FabricSoundInstance {
     private static final int FREEZE_STOP_TICKS = 40;          // 2s without a moving clock
     private static final long UNSTARTED_WATCHDOG_MILLIS = 5_000L;
     private static final double DRIFT_RESTART_SECONDS = 2.0;
@@ -78,7 +79,7 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         this.pitch = 1.0F;
         this.attenuation = SoundInstance.Attenuation.LINEAR;
         this.sound = new Sound(location, ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
-                Sound.Type.FILE, true, false, ClientConfig.INSTANCE.audioDistance.get());
+                Sound.Type.FILE, true, false, ClientConfig.audioDistance);
         updatePosition();
     }
 
@@ -90,7 +91,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     }
 
     @Override
-    public CompletableFuture<AudioStream> getStream(SoundBufferLibrary buffers, Sound sound, boolean looping) {
+    public CompletableFuture<AudioStream> getAudioStream(SoundBufferLibrary soundBuffers, ResourceLocation location,
+                                                         boolean looping) {
         openQueued = true;
         return CompletableFuture.supplyAsync(this::openStream, OPEN_EXECUTOR);
     }
@@ -136,7 +138,7 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
             stopInstance();
             return;
         }
-        double distance = ClientConfig.INSTANCE.audioDistance.get();
+        double distance = ClientConfig.audioDistance;
         if (minecraft.player.distanceToSqr(x, y, z) > distance * distance) {
             stopInstance();
             return;

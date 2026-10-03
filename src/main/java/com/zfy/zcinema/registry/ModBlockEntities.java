@@ -2,20 +2,18 @@ package com.zfy.zcinema.registry;
 
 import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
-import net.minecraft.core.registries.Registries;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredRegister;
-
-import java.util.Set;
 
 public final class ModBlockEntities {
-    public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
-            DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ZCinema.MODID);
-
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CinemaScreenBlockEntity>> SCREEN_BE =
-            BLOCK_ENTITIES.register("screen", () -> BlockEntityType.Builder.of(
-                    CinemaScreenBlockEntity::new, ModBlocks.SCREEN.get()).build(null));
+    public static final BlockEntityType<CinemaScreenBlockEntity> SCREEN_BE = Registry.register(
+            BuiltInRegistries.BLOCK_ENTITY_TYPE, ZCinema.id("screen"),
+            BlockEntityType.Builder.of(CinemaScreenBlockEntity::new, ModBlocks.SCREEN).build(null));
 
     private ModBlockEntities() {}
+
+    /** Loading this holder class is what performs the registration. */
+    public static void register() {
+    }
 }

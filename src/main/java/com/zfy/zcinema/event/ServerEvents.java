@@ -4,15 +4,13 @@ import com.zfy.zcinema.block.ScreenBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.registry.ModBlocks;
 import com.zfy.zcinema.screen.ScreenArea;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -24,11 +22,23 @@ public final class ServerEvents {
     /** How far the state-carrying block may sit from a broken one, along the wall. */
     private static final int SCAN_RANGE = 64;
 
-    public ServerEvents() {}
+    private ServerEvents() {}
 
-    @SubscribeEvent
-    public void onChunkWatch(ChunkWatchEvent.Watch event) {
-        if (!(event.getLevel().getChunk(event.getPos().x, event.getPos().z) instanceof LevelChunk chunk)) {
+    public static void register() {
+        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
+            if (!(level instanceof ServerLevel serverLevel)) return true;
+            if (!state.is(ModBlocks.SCREEN)) return true;
+            CinemaScreenBlockEntity screen = findScreen(serverLevel, pos, state);
+            if (screen != null) {
+                screen.dissolveScreen();
+            }
+            return true;
+        });
+    }
+
+    /** Called from the ChunkMap mixin right after a chunk is queued for a watching player. */
+    public static void onChunkWatch(ServerLevel level, ChunkPos pos) {
+        if (!(level.getChunk(pos.x, pos.z) instanceof LevelChunk chunk)) {
             return;
         }
         chunk.getBlockEntities().values().forEach(be -> {
@@ -49,17 +59,6 @@ public final class ServerEvents {
      * otherwise the state sits somewhere else in the same flat rectangle - the block's facing tells
      * us which plane to search.
      */
-    @SubscribeEvent
-    public void onBlockBreak(BlockEvent.BreakEvent event) {
-        if (!(event.getLevel() instanceof ServerLevel level)) return;
-        BlockState state = event.getState();
-        if (!state.is(ModBlocks.SCREEN.get())) return;
-        CinemaScreenBlockEntity screen = findScreen(level, event.getPos(), state);
-        if (screen != null) {
-            screen.dissolveScreen();
-        }
-    }
-
     private static @Nullable CinemaScreenBlockEntity findScreen(ServerLevel level, BlockPos pos, BlockState state) {
         if (level.getChunkAt(pos).getBlockEntity(pos) instanceof CinemaScreenBlockEntity be && be.hasScreenArea()) {
             return be;

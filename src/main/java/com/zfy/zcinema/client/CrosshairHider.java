@@ -2,16 +2,14 @@ package com.zfy.zcinema.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
-import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 
 /**
  * Keeps the crosshair out of the picture while nobody is looking around: the moment the camera has
  * not turned for a couple of seconds the vanilla crosshair layer is simply not drawn, and the first
  * mouse movement brings it straight back. Nothing about aiming or interaction changes - a hidden
  * crosshair still points at the same block.
+ *
+ * <p>{@link com.zfy.zcinema.mixin.GuiMixin} consults {@link #shouldHide()} while drawing the HUD.
  */
 public final class CrosshairHider {
     /** How long the camera has to stay still before the crosshair disappears. */
@@ -19,13 +17,14 @@ public final class CrosshairHider {
     /** How much the view has to move to count as movement, in degrees. */
     private static final float MOVEMENT_EPSILON = 0.01F;
 
-    private float lastYaw = Float.NaN;
-    private float lastPitch = Float.NaN;
-    private long stillSince;
-    private boolean idle;
+    private static float lastYaw = Float.NaN;
+    private static float lastPitch = Float.NaN;
+    private static long stillSince;
+    private static boolean idle;
 
-    @SubscribeEvent
-    public void onClientTick(ClientTickEvent.Post event) {
+    private CrosshairHider() {}
+
+    public static void tick() {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         if (player == null || minecraft.level == null) {
@@ -47,14 +46,11 @@ public final class CrosshairHider {
         lastPitch = pitch;
     }
 
-    @SubscribeEvent
-    public void onRenderGuiLayer(RenderGuiLayerEvent.Pre event) {
-        if (idle && event.getName().equals(VanillaGuiLayers.CROSSHAIR)) {
-            event.setCanceled(true);
-        }
+    public static boolean shouldHide() {
+        return idle;
     }
 
-    private void reset() {
+    private static void reset() {
         lastYaw = Float.NaN;
         lastPitch = Float.NaN;
         idle = false;

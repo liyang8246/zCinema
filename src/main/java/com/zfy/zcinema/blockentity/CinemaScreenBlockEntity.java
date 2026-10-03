@@ -3,9 +3,11 @@ package com.zfy.zcinema.blockentity;
 import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.config.CommonConfig;
 import com.zfy.zcinema.gui.CinemaScreenMenu;
+import com.zfy.zcinema.net.ModNetworking;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.screen.ScreenArea;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -20,7 +22,6 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,7 +44,7 @@ import java.util.UUID;
  * approach). One person's network blip cannot stutter the film for everybody else, and cannot
  * freeze/unfreeze in a loop either.
  */
-public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider {
+public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider, ExtendedScreenHandlerFactory<BlockPos> {
     private static final int CONTROL_RANGE_SQR = 24 * 24;
     private static final double HEALTH_REPORT_RANGE_SQR = 128.0 * 128.0;
 
@@ -97,7 +98,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     private boolean dirty;
 
     public CinemaScreenBlockEntity(BlockPos pos, BlockState state) {
-        super(ModBlockEntities.SCREEN_BE.get(), pos, state);
+        super(ModBlockEntities.SCREEN_BE, pos, state);
     }
 
     // =============================== screen geometry ===============================
@@ -160,7 +161,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
             for (int y = area.min().getY(); y <= area.max().getY(); y++) {
                 for (int z = area.min().getZ(); z <= area.max().getZ(); z++) {
                     cursor.set(x, y, z);
-                    if (level.getBlockState(cursor).is(com.zfy.zcinema.registry.ModBlocks.SCREEN.get())) {
+                    if (level.getBlockState(cursor).is(com.zfy.zcinema.registry.ModBlocks.SCREEN)) {
                         level.setBlockAndUpdate(cursor,
                                 net.minecraft.world.level.block.Blocks.BLACK_CONCRETE.defaultBlockState());
                     }
@@ -187,7 +188,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
                 dirty = true;
             }
         }
-        int interval = CommonConfig.INSTANCE.syncIntervalTicks.get();
+        int interval = CommonConfig.syncIntervalTicks;
         if (++syncCounter >= interval || dirty) {
             syncCounter = 0;
             dirty = false;
@@ -340,14 +341,14 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
         }
 
         boolean shouldPause;
-        if (!CommonConfig.INSTANCE.globalStallPause.get()) {
+        if (!CommonConfig.globalStallPause) {
             shouldPause = false;
         } else if (singleplayer) {
             shouldPause = sourceFailures > 0;
         } else {
             shouldPause = fresh >= 2 && healthy == 0 && sourceFailures * 3 >= fresh * 2;
         }
-        boolean serverLagging = CommonConfig.INSTANCE.globalStallPause.get()
+        boolean serverLagging = CommonConfig.globalStallPause
                 && retained >= 2 && degraded * 3 >= retained * 2;
 
         if (!frozen && !pendingPause) {
@@ -413,8 +414,7 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
                 area != null ? area.max().getX() : 0, area != null ? area.max().getY() : 0,
                 area != null ? area.max().getZ() : 0,
                 area != null ? area.normal().get3DDataValue() : Direction.NORTH.get3DDataValue());
-        PacketDistributor.sendToPlayersNear((ServerLevel) level, null,
-                center.x, center.y, center.z, radiusFor(area), packet);
+        ModNetworking.sendToPlayersNear((ServerLevel) level, center, radiusFor(area), packet);
     }
 
     private static double radiusFor(ScreenArea area) {
@@ -507,6 +507,11 @@ public class CinemaScreenBlockEntity extends BlockEntity implements MenuProvider
     @Override
     public AbstractContainerMenu createMenu(int id, Inventory inventory, Player player) {
         return CinemaScreenMenu.server(id, inventory, getBlockPos());
+    }
+
+    @Override
+    public BlockPos getScreenOpeningData(ServerPlayer player) {
+        return getBlockPos();
     }
 
     // =============================== persistence ===============================

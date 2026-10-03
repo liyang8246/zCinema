@@ -15,7 +15,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import net.neoforged.neoforge.network.PacketDistributor;
+import com.zfy.zcinema.net.ModNetworking;
 
 /**
  * The screen's control panel: URL box, play/pause and a seek slider. Everyone who opens it drives
@@ -59,7 +59,7 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
         addRenderableWidget(Button.builder(Component.translatable("gui.zcinema.load"), button -> {
             if (screen != null) {
-                PacketDistributor.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
+                ModNetworking.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
             }
         }).bounds(left + 198, top + 20, 50, 18).build());
 

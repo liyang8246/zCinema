@@ -12,7 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.network.PacketDistributor;
+import com.zfy.zcinema.net.ModNetworking;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
@@ -147,7 +147,7 @@ public final class PlaybackSession {
     }
 
     private double hardResyncSeconds() {
-        return ClientConfig.INSTANCE.hardResyncSeconds.get();
+        return ClientConfig.hardResyncSeconds;
     }
 
     public boolean matchesUrl(String other) {
@@ -411,11 +411,11 @@ public final class PlaybackSession {
             progress = 0.60F;
 
             double timestampOrigin = Double.NaN;
-            double maxBuffer = Math.max(0.25D, ClientConfig.INSTANCE.bufferSeconds.get());
+            double maxBuffer = Math.max(0.25D, ClientConfig.bufferSeconds);
             progress = 0.72F;
             try (FrameScaler scaler = new FrameScaler()) {
-                int maxWidth = ClientConfig.INSTANCE.maxFrameWidth.get();
-                int maxHeight = ClientConfig.INSTANCE.maxFrameHeight.get();
+                int maxWidth = ClientConfig.maxFrameWidth;
+                int maxHeight = ClientConfig.maxFrameHeight;
                 while (!isRetired(generation)) {
                     if (!Double.isNaN(pendingSeek)) {
                         double target = knownDuration > 0.0
@@ -721,7 +721,7 @@ public final class PlaybackSession {
         long now = System.currentTimeMillis();
         if (now - lastHealthReportAt < HEALTH_REPORT_INTERVAL_MILLIS) return;
         lastHealthReportAt = now;
-        PacketDistributor.sendToServer(new C2SHealthPacket(pos, health()));
+        ModNetworking.sendToServer(new C2SHealthPacket(pos, health()));
     }
 
     public PlaybackHealth health() {
@@ -739,7 +739,7 @@ public final class PlaybackSession {
     private void sendDuration(double seconds) {
         durationReported = true;
         lastMediaReportAt = System.currentTimeMillis();
-        PacketDistributor.sendToServer(new C2SReportMediaPacket(pos, url, (long) (seconds * 1000L)));
+        ModNetworking.sendToServer(new C2SReportMediaPacket(pos, url, (long) (seconds * 1000L)));
     }
 
     // =============================== status ===============================
