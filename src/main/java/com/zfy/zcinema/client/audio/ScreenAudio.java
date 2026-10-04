@@ -124,8 +124,8 @@ public final class ScreenAudio {
             CinemaSoundInstance instance = new CinemaSoundInstance(session);
             INSTANCES.put(pos, instance);
             RETRY_AT.remove(pos);
-            ZCinemaLog.log("audio", "start screen=%s at=%.3fs master=%.3fs", pos.toShortString(),
-                    session.mediaSeconds(), masterSeconds);
+            ZCinemaLog.log("audio", "start screen=%s at=%.3fs master=%.3fs active=%d", pos.toShortString(),
+                    session.mediaSeconds(), masterSeconds, INSTANCES.size());
             minecraft.getSoundManager().play(instance);
         }
     }
@@ -158,7 +158,8 @@ public final class ScreenAudio {
     public static void stop(BlockPos pos, String reason) {
         CinemaSoundInstance instance = INSTANCES.remove(pos);
         if (instance == null) return;
-        ZCinemaLog.log("audio", "stop screen=%s reason=%s", pos.toShortString(), reason);
+        ZCinemaLog.log("audio", "stop screen=%s reason=%s active=%d", pos.toShortString(), reason,
+                INSTANCES.size());
         instance.stopInstance(reason);
         Minecraft.getInstance().getSoundManager().stop(instance);
         RETRY_AT.remove(pos);
@@ -173,5 +174,16 @@ public final class ScreenAudio {
     public static double debugPosition(BlockPos pos) {
         CinemaSoundInstance instance = INSTANCES.get(pos);
         return instance == null ? Double.NaN : instance.audioPositionSeconds();
+    }
+
+    /** Newest decoded frame timestamp of the sound for a screen, or NaN. Diagnostics only. */
+    public static double debugDecodedTimestamp(BlockPos pos) {
+        CinemaSoundInstance instance = INSTANCES.get(pos);
+        return instance == null ? Double.NaN : instance.decodedTimestamp();
+    }
+
+    /** How many sound instances are alive right now. Diagnostics only. */
+    public static int instanceCount() {
+        return INSTANCES.size();
     }
 }

@@ -205,6 +205,13 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         return Double.NaN;
     }
 
+    /** Newest frame timestamp the sound's decoder produced, for diagnostics. */
+    double decodedTimestamp() {
+        AudioStream current = stream;
+        if (current instanceof StreamAudio audio) return audio.lastDecodedTimestamp();
+        return Double.NaN;
+    }
+
     double driftRestartSeconds() {
         return DRIFT_RESTART_SECONDS;
     }
@@ -226,10 +233,15 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     void stopInstance(String reason) {
         if (stopped) return;
         stopped = true;
-        ZCinemaLog.log("audio", "instance stopped screen=%s reason=%s", pos.toShortString(), reason);
+        ZCinemaLog.log("audio", "instance stopped screen=%s reason=%s position=%s media=%s",
+                pos.toShortString(), reason, fmt(audioPositionSeconds()), fmt(session.mediaSeconds()));
         // The sound engine polls isStopped() and closes its channel on the next tick; closing the
         // stream ourselves makes the sound go quiet immediately either way.
         closeStream();
+    }
+
+    private static String fmt(double value) {
+        return Double.isNaN(value) ? "n/a" : String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
     private void closeStream() {

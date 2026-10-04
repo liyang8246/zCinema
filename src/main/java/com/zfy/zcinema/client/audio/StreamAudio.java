@@ -65,6 +65,11 @@ public final class StreamAudio implements AudioStream {
     /** Content frames still to drop so silence already handed to the engine cannot slide the sound. */
     private int healFrames;
     private long lastStarvationLogAt;
+    /** Newest frame timestamp the decoder produced; NaN before the first frame. */
+    private volatile double lastDecodedTimestamp = Double.NaN;
+    /** Previous frame timestamp, so a discontinuity in the content can be logged. */
+    private double previousFrameTimestamp = Double.NaN;
+    private long lastPositionLogAt;
 
     public StreamAudio(String url, DoubleSupplier startSeconds, double knownDuration) throws IOException {
         long openedAt = System.currentTimeMillis();
@@ -154,6 +159,11 @@ public final class StreamAudio implements AudioStream {
     /** Position in the media this stream starts sounding at, chosen once it opens. */
     public double startTime() {
         return startTime;
+    }
+
+    /** Timestamp of the newest audio frame the decoder produced, in media seconds. */
+    public double lastDecodedTimestamp() {
+        return lastDecodedTimestamp;
     }
 
     /** True once the sound engine pulled its first samples. */
@@ -246,13 +256,41 @@ public final class StreamAudio implements AudioStream {
         return true;
     }
 
+    /**
+     * Diagnostics: remembers the newest frame timestamp and logs a discontinuity when the demuxer
+     * hands over frames that do not continue where the previous one left off. That is the exact
+     * signature a silent "the audio jumped somewhere else" leaves behind. The heartbeat line every
+     * few seconds keeps the decoded content position comparable with {@link #playedSeconds()}.
+     */
+    private void traceFrame(org.bytedeco.javacv.Frame frame) {
+        double stamp = frame.timestamp / 1_000_000.0;
+        lastDecodedTimestamp = stamp;
+        double previous = previousFrameTimestamp;
+        previousFrameTimestamp = stamp;
+        if (!Double.isNaN(previous) && Math.abs(stamp - previous) > 0.5) {
+            ZCinemaLog.log("audio", "decoded JUMP ts=%s -> %s (delta %+.3fs) played=%s buffered=%.3fs",
+                    fmt(previous), fmt(stamp), stamp - previous, fmt(playedSeconds()), bufferedSeconds());
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastPositionLogAt >= 5_000L) {
+            lastPositionLogAt = now;
+            ZCinemaLog.log("audio", "decoded pos ts=%s played=%s buffered=%.3fs", fmt(stamp),
+                    fmt(playedSeconds()), bufferedSeconds());
+        }
+    }
+
+    private static String fmt(double value) {
+        return Double.isNaN(value) ? "n/a" : String.format(java.util.Locale.ROOT, "%.3f", value);
+    }
+
     private void logStarvation() {
         long now = System.currentTimeMillis();
         if (now - lastStarvationLogAt < 2_000L) return;
         lastStarvationLogAt = now;
         int framesPerSecond = Math.max(1, Math.round(format.getSampleRate()));
-        ZCinemaLog.log("audio", "starved: padded silence, heal pending=%dms buffered=%.3fs",
-                Math.round(healFrames * 1000.0 / framesPerSecond), bufferedSeconds());
+        ZCinemaLog.log("audio", "starved: padded silence, heal pending=%dms buffered=%.3fs lastTs=%s played=%s",
+                Math.round(healFrames * 1000.0 / framesPerSecond), bufferedSeconds(),
+                fmt(lastDecodedTimestamp), fmt(playedSeconds()));
     }
 
     private void decodeAudio() {
@@ -260,6 +298,7 @@ public final class StreamAudio implements AudioStream {
             while (!closed) {
                 org.bytedeco.javacv.Frame frame = grabSamples();
                 if (frame == null) break;
+                traceFrame(frame);
                 ByteBuffer pcm = convert(frame, format.getChannels());
                 enqueueDecoded(pcm);
             }
@@ -349,14 +388,22 @@ public final class StreamAudio implements AudioStream {
         }
         if (!closed) {
             // End of file: start over rather than going silent for the rest of the stream.
+            // Logged loudly: a silent restart here is exactly how the audio can "jump" to an
+            // unrelated passage without the position estimate ever noticing.
+            ZCinemaLog.log("audio", "stream EOF: lastTs=%s played=%s buffered=%.3fs duration=%.3fs - "
+                            + "restarting the decoder at 0",
+                    fmt(lastDecodedTimestamp), fmt(playedSeconds()), bufferedSeconds(), duration);
             try {
                 grabber.setTimestamp(0L);
+                ZCinemaLog.log("audio", "EOF loop: seek to 0 accepted, decoding from the file start");
                 while (!closed && (frame = grabber.grabSamples()) != null) {
                     if (frame.samples != null && frame.samples.length > 0 && trimDiscardedSamples(frame)) {
                         return frame;
                     }
                 }
-            } catch (Exception ignored) {
+                ZCinemaLog.log("audio", "EOF loop: the replay produced no frames");
+            } catch (Exception error) {
+                ZCinemaLog.log("audio", "EOF loop: seek to 0 FAILED: %s", ZCinemaLog.cause(error));
             }
         }
         return null;
@@ -425,7 +472,8 @@ public final class StreamAudio implements AudioStream {
     public void close() {
         if (closed) return;
         closed = true;
-        ZCinemaLog.log("audio", "stream close start=%.3fs", startTime);
+        ZCinemaLog.log("audio", "stream close start=%.3fs played=%s buffered=%.3fs", startTime,
+                fmt(playedSeconds()), bufferedSeconds());
         decoderThread.interrupt();
         decoded.clear();
         bufferedBytes.set(0);

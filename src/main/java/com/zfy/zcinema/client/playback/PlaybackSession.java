@@ -110,6 +110,8 @@ public final class PlaybackSession {
     private volatile boolean clockMoving;
     /** Timestamp of the newest frame our decoder produced (used to decide how to seek). */
     private volatile double lastDecodedTs = Double.NaN;
+    /** Raw demuxer timestamp of the previous video frame, to expose discontinuities in the log. */
+    private double previousRawTimestamp = Double.NaN;
     /**
      * Whether the resolved stream honours HTTP Range. The decoder thread finds out while opening
      * the stream (probing the resolved link, not the parsing API that stands in front of it);
@@ -487,6 +489,7 @@ public final class PlaybackSession {
                 try {
                     grabber.setTimestamp((long) (requestedStart * 1_000_000.0));
                     timestampTarget = requestedStart;
+                    previousRawTimestamp = Double.NaN;
                     seekAppliedAt = System.currentTimeMillis();
                     seekLandedTarget = requestedStart;
                 } catch (Exception error) {
@@ -521,6 +524,7 @@ public final class PlaybackSession {
                                 grabber.setTimestamp((long) (target * 1_000_000.0));
                                 timestampOrigin = Double.NaN;
                                 timestampTarget = target;
+                                previousRawTimestamp = Double.NaN;
                                 ZCinema.LOGGER.info("Screen {} seeks its stream to {}s", pos,
                                         String.format(java.util.Locale.ROOT, "%.3f", target));
                                 seekAppliedAt = System.currentTimeMillis();
@@ -596,6 +600,12 @@ public final class PlaybackSession {
                     if (!(frame.opaque instanceof AVFrame)) continue;
 
                     double rawTs = frame.timestamp / 1_000_000.0;
+                    if (!Double.isNaN(previousRawTimestamp) && Math.abs(rawTs - previousRawTimestamp) > 0.75) {
+                        ZCinemaLog.log("decode", "video jump raw %s -> %s (delta %+.3fs) media=%.3fs",
+                                fmt(previousRawTimestamp), fmt(rawTs), rawTs - previousRawTimestamp,
+                                mediaSeconds());
+                    }
+                    previousRawTimestamp = rawTs;
                     if (Double.isNaN(timestampOrigin)) timestampOrigin = rawTs - timestampTarget;
                     double ts = Math.max(0.0, rawTs - timestampOrigin);
                     lastDecodedTs = ts;
@@ -849,6 +859,7 @@ public final class PlaybackSession {
         double videoError = Double.isNaN(displayedTs) ? Double.NaN : displayedTs - media;
         double audioPosition = ScreenAudio.debugPosition(pos);
         double audioError = Double.isNaN(audioPosition) ? Double.NaN : audioPosition - media;
+        double audioSource = ScreenAudio.debugDecodedTimestamp(pos);
         int decoded = decodedFrames.get();
         int dropped = droppedFrames.get();
         int decodedRate = decoded - lastDecodedFrames;
@@ -856,11 +867,13 @@ public final class PlaybackSession {
         lastDecodedFrames = decoded;
         lastDroppedFrames = dropped;
         ZCinemaLog.log("state", "screen=%s shared=%.3fs media=%.3fs itemStart=%+.3fs drift=%+.3fs "
-                        + "videoErr=%s audioErr=%s frame=%s buf=%d/%s ready=%s rebuf=%s seeking=%s "
+                        + "videoErr=%s audioErr=%s audioSrc=%s audioInst=%d frame=%s buf=%d/%s "
+                        + "ready=%s rebuf=%s seeking=%s "
                         + "resyncing=%s playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s "
                         + "video=%d/s drop=%d/s",
                 pos.toShortString(), targetSeconds(), media, itemStartSeconds, media - targetSeconds(),
-                fmt(videoError), fmt(audioError), fmt(displayedTs), buffered, fmt(bufferedSeconds()),
+                fmt(videoError), fmt(audioError), fmt(audioSource), ScreenAudio.instanceCount(),
+                fmt(displayedTs), buffered, fmt(bufferedSeconds()),
                 bufferReady, rebuffering, seeking(), resyncing, be.clientPlaying(), be.clientFrozen(),
                 clockMoving, failed, ended, rangeOk, decodedRate, droppedRate);
     }
