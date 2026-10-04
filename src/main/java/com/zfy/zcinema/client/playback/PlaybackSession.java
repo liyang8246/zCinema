@@ -146,7 +146,10 @@ public final class PlaybackSession {
     }
 
     public static PlaybackSession open(CinemaScreenBlockEntity be) {
-        if (be.clientUrl().isBlank()) return null;
+        if (be.isRemoved() || be.clientUrl().isBlank()) return null;
+        // A render list can offer a block entity the level has already replaced; its session
+        // could never become valid, so it must not be opened (and decoded) in the first place.
+        if (ClientPlayback.find(be.getBlockPos()) != be) return null;
         return new PlaybackSession(be, be.clientPositionSeconds());
     }
 

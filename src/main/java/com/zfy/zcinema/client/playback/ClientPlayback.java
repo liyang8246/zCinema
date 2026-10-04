@@ -27,13 +27,20 @@ public final class ClientPlayback {
 
     /** Called from the screen renderer every frame it is visible. */
     public static FrameView frame(CinemaScreenBlockEntity be) {
-        if (be == null || be.getLevel() == null || be.clientUrl().isBlank()) return null;
+        if (be == null || be.getLevel() == null || be.isRemoved() || be.clientUrl().isBlank()) return null;
         PlaybackSession session = SESSIONS.get(be.getBlockPos());
         if (session != null && !session.valid()) {
             // A screen that used to sit here is gone; its session must not play on.
             session.close("screen gone");
             SESSIONS.remove(be.getBlockPos());
             session = null;
+        }
+        if (find(be.getBlockPos()) != be) {
+            // Render lists keep handing us the old block entity until the section that holds it
+            // is rebuilt, so a ghost from before a chunk reload can show up here for minutes.
+            // Reopening a session for it would do so once per render call and spawn a decoder
+            // thread (and a stream open attempt) every time; leave it alone instead.
+            return null;
         }
         if (session == null || !session.matchesUrl(be.clientUrl())) {
             if (session != null) session.close("url changed");
