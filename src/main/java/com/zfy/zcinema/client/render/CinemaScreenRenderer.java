@@ -6,9 +6,12 @@ import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.playback.FrameView;
 import com.zfy.zcinema.screen.ScreenArea;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
@@ -18,6 +21,14 @@ import net.minecraft.world.phys.Vec3;
  * Draws the decoded video frame across the whole concrete rectangle of a screen. Picking the
  * frame happens here too, which is also what keeps the local stream session alive while the
  * screen is visible.
+ *
+ * <p>The picture uses the vanilla emissive entity pipeline: texture colour straight to the
+ * framebuffer, at full brightness, with no lightmap sampling and no block shading. Shaders are the
+ * reason for the choice. Iris sends any draw of a render type without lightmap data (like the bare
+ * {@code position_tex} core shader) through the shaderpack's "textured" program, which every pack
+ * treats as a fully lit, glowing particle: the scene's light gets added on top of the picture and
+ * blows it out. The emissive entity pipeline keeps the quad in the entity/block-entity program
+ * family the packs expect for unlit surfaces.
  */
 public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlockEntity> {
     // The quad sits barely off the concrete face: close enough to look flush with the wall, far
@@ -123,7 +134,7 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
 
         float[][] fitted = letterbox(area.screenWidth(), area.screenHeight(), frame.width(), frame.height(),
                 corners, axisA, axisB);
-        VertexConsumer consumer = bufferSource.getBuffer(ModRenderPipelines.screen(frame.texture()));
+        VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityTranslucentEmissive(frame.texture()));
         poseStack.pushPose();
         drawQuad(consumer, poseStack.last(), normal, fitted, flipU);
         poseStack.popPose();
@@ -200,6 +211,8 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
             consumer.addVertex(pose, c[i][0], c[i][1], c[i][2])
                     .setColor(255, 255, 255, 255)
                     .setUv(uvs[i][0], uvs[i][1])
+                    .setOverlay(OverlayTexture.NO_OVERLAY)
+                    .setLight(LightTexture.FULL_BRIGHT)
                     .setNormal(pose, normal.getStepX(), normal.getStepY(), normal.getStepZ());
         }
     }

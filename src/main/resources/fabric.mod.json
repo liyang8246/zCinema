@@ -9,7 +9,6 @@
   ],
   "license": "MIT",
   "environment": "*",
-  "accessWidener": "zcinema.accesswidener",
   "entrypoints": {
     "main": [
       "com.zfy.zcinema.ZCinema"

@@ -5,9 +5,6 @@
   "mixins": [
     "ChunkMapMixin"
   ],
-  "client": [
-    "GuiMixin"
-  ],
   "injectors": {
     "defaultRequire": 1
   }

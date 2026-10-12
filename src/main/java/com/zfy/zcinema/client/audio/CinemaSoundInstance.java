@@ -4,7 +4,6 @@ import com.mojang.blaze3d.audio.Channel;
 import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
-import com.zfy.zcinema.client.config.ClientConfig;
 import com.zfy.zcinema.client.playback.PlaybackSession;
 import net.fabricmc.fabric.api.client.sound.v1.FabricSoundInstance;
 import net.minecraft.client.Minecraft;
@@ -32,9 +31,10 @@ import java.util.concurrent.Executors;
 /**
  * The screen's audio: a positional, streamed sound that decodes PCM from the same link the video
  * comes from. It terminates itself the moment it is wrong - paused, globally frozen, the clock
- * stuck, the viewer walked away, the URL changed, or it simply never started - and the controller
- * reopens it at the current position. That is what keeps it glued to the picture instead of
- * quietly drifting behind it.
+ * stuck, the URL changed, or it simply never started - and the controller reopens it at the current
+ * position. That is what keeps it glued to the picture instead of quietly drifting behind it.
+ * It is never attenuated by distance either: it stays positional but keeps its volume wherever the
+ * screen can be heard from.
  */
 class CinemaSoundInstance extends AbstractSoundInstance implements TickableSoundInstance, FabricSoundInstance {
     private static final int FREEZE_STOP_TICKS = 40;          // 2s without a moving clock
@@ -76,9 +76,13 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         this.z = pos.getZ() + 0.5;
         this.volume = 1.0F;
         this.pitch = 1.0F;
-        this.attenuation = SoundInstance.Attenuation.LINEAR;
+        // Never attenuated: the picture is the same however far away the viewer is, so the sound is
+        // too. It stays positional (it pans with the screen) but keeps its volume at any distance.
+        // The sound's own attenuation range is ignored under NONE; it is kept non-zero for other
+        // sound engines that read it anyway.
+        this.attenuation = SoundInstance.Attenuation.NONE;
         this.sound = new Sound(location, ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
-                Sound.Type.FILE, true, false, ClientConfig.audioDistance);
+                Sound.Type.FILE, true, false, 256);
         updatePosition();
     }
 
@@ -147,12 +151,6 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
                 || com.zfy.zcinema.client.playback.ClientPlayback.find(pos) != be
                 || !be.getLevel().dimension().equals(minecraft.level.dimension())) {
             stopInstance("url/screen/dimension changed");
-            return;
-        }
-        double distance = ClientConfig.audioDistance;
-        if (minecraft.player.distanceToSqr(x, y, z) > distance * distance) {
-            stopInstance(String.format(java.util.Locale.ROOT, "viewer out of earshot (%.1f blocks)",
-                    Math.sqrt(minecraft.player.distanceToSqr(x, y, z))));
             return;
         }
         latestPlayTime = session.audioReferenceSeconds();

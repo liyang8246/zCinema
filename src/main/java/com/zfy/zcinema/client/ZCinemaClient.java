@@ -26,7 +26,7 @@ public final class ZCinemaClient implements ClientModInitializer {
                 context.client().execute(() -> ClientPlayback.handleState(payload)));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> ClientPlayback.tick());
-        ClientTickEvents.END_CLIENT_TICK.register(client -> CrosshairHider.tick());
+        ClientTickEvents.END_CLIENT_TICK.register(client -> HudHider.tick());
 
         ZCinema.LOGGER.info("Z Cinema client ready");
     }

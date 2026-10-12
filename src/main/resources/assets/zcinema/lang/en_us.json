@@ -33,8 +33,5 @@
   "zcinema.configuration.stream.bufferSeconds.tooltip": "How far ahead of the shared clock this client decodes.",
 
   "zcinema.configuration.sync.hardResyncSeconds": "Hard resync tolerance (seconds)",
-  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "If the shared clock and local playback diverge by more than this, the stream seeks instead of waiting.",
-
-  "zcinema.configuration.audio.audioDistance": "Audio distance",
-  "zcinema.configuration.audio.audioDistance.tooltip": "How far away the screen audio can be heard."
+  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "If the shared clock and local playback diverge by more than this, the stream seeks instead of waiting."
 }

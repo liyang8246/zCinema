@@ -5,7 +5,7 @@ import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.config.JsonConfig;
 
 /**
- * Client side knobs for decoding, buffering, sync tolerance and audio reach. Loaded on client
+ * Client side knobs for decoding, buffering, sync tolerance and audio delay. Loaded on client
  * start from {@code config/zcinema-client.json}.
  */
 public final class ClientConfig {
@@ -25,8 +25,6 @@ public final class ClientConfig {
      * Reported "audio is ~100ms ahead" is the usual symptom when this is too low.
      */
     public static int audioDelayMs = 100;
-    /** How far away the screen audio can be heard. */
-    public static int audioDistance = 48;
 
     private ClientConfig() {}
 
@@ -37,7 +35,6 @@ public final class ClientConfig {
         bufferSeconds = JsonConfig.getDouble(root, "bufferSeconds", bufferSeconds, 0.25, 8.0);
         hardResyncSeconds = JsonConfig.getDouble(root, "hardResyncSeconds", hardResyncSeconds, 0.5, 30.0);
         audioDelayMs = JsonConfig.getInt(root, "audioDelayMs", audioDelayMs, 0, 500);
-        audioDistance = JsonConfig.getInt(root, "audioDistance", audioDistance, 4, 256);
 
         JsonObject out = root.deepCopy();
         out.addProperty("maxFrameWidth", maxFrameWidth);
@@ -45,11 +42,10 @@ public final class ClientConfig {
         out.addProperty("bufferSeconds", bufferSeconds);
         out.addProperty("hardResyncSeconds", hardResyncSeconds);
         out.addProperty("audioDelayMs", audioDelayMs);
-        out.addProperty("audioDistance", audioDistance);
         JsonConfig.write(FILE_NAME, out);
         ZCinemaLog.log("config", "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs "
-                        + "audioDelay=%dms audioDistance=%d (config/%s)",
+                        + "audioDelay=%dms (config/%s)",
                 maxFrameWidth, maxFrameHeight, bufferSeconds, hardResyncSeconds, audioDelayMs,
-                audioDistance, FILE_NAME);
+                FILE_NAME);
     }
 }

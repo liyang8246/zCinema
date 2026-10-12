@@ -33,8 +33,5 @@
   "zcinema.configuration.stream.bufferSeconds.tooltip": "本地解码领先共享时钟多少秒。",
 
   "zcinema.configuration.sync.hardResyncSeconds": "硬同步容差（秒）",
-  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "本地进度与共享时钟偏差超过该值时，直接把视频流定位过去。",
-
-  "zcinema.configuration.audio.audioDistance": "声音传播距离",
-  "zcinema.configuration.audio.audioDistance.tooltip": "屏幕声音最远能被听到的距离。"
+  "zcinema.configuration.sync.hardResyncSeconds.tooltip": "本地进度与共享时钟偏差超过该值时，直接把视频流定位过去。"
 }
