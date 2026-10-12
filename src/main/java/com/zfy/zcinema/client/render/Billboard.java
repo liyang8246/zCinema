@@ -36,13 +36,21 @@ final class Billboard {
         return -lookYaw * Mth.DEG_TO_RAD;
     }
 
+    /**
+     * The item artwork is padded with a 10% transparent margin, which is what makes the icon in the
+     * inventory and in the hand a tenth smaller. The world billboards draw the whole texture, so
+     * they scale back up by that factor to keep their picture, and their quoted size, intact.
+     */
+    private static final float SPRITE_FILL = 0.9F;
+
     /** Adds one flat quad of the given half size (in blocks) to the buffer, centred on the pose. */
     static void draw(VertexConsumer consumer, PoseStack.Pose pose, float half, int alpha) {
+        float reach = half / SPRITE_FILL;
         float[][] corners = {
-                {-half, -half, 0.0F, 1.0F},   // bottom left
-                {-half, half, 0.0F, 0.0F},    // top left
-                {half, half, 1.0F, 0.0F},     // top right
-                {half, -half, 1.0F, 1.0F},    // bottom right
+                {-reach, -reach, 0.0F, 1.0F},   // bottom left
+                {-reach, reach, 0.0F, 0.0F},    // top left
+                {reach, reach, 1.0F, 0.0F},     // top right
+                {reach, -reach, 1.0F, 1.0F},    // bottom right
         };
         for (float[] corner : corners) {
             consumer.addVertex(pose, corner[0], corner[1], 0.0F)

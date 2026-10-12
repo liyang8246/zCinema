@@ -56,12 +56,28 @@ public class ThrownEmoji extends ThrowableItemProjectile {
     @Override
     protected void onHit(HitResult result) {
         super.onHit(result);
-        if (!this.level().isClientSide) {
-            if (result instanceof BlockHitResult blockHit) {
-                this.splat(blockHit);
-            }
-            this.discard();
+        if (!this.level().isClientSide && result instanceof BlockHitResult blockHit) {
+            this.splat(blockHit);
         }
+        // Both sides stop here: the client should not fly its copy on through the wall while it
+        // waits for the server to remove the entity.
+        this.discard();
+    }
+
+    /**
+     * The client keeps its own prediction of the flight instead of snapping to the position updates.
+     * Those updates arrive in bursts, and at seven and a half blocks a tick every snap is a visible
+     * jump, which is what made the emoji stutter on its way. The prediction runs the same maths the
+     * server does, so the only thing given up is following a real teleport - and a throw is never
+     * teleported.
+     */
+    @Override
+    public void lerpTo(double x, double y, double z, float yaw, float pitch, int steps) {
+        if (this.level().isClientSide) {
+            this.setRot(yaw, pitch);
+            return;
+        }
+        super.lerpTo(x, y, z, yaw, pitch, steps);
     }
 
     /**

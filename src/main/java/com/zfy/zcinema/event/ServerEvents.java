@@ -4,7 +4,9 @@ import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.block.ScreenBlock;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.registry.ModBlocks;
+import com.zfy.zcinema.registry.ModItems;
 import com.zfy.zcinema.screen.ScreenArea;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -26,6 +28,13 @@ public final class ServerEvents {
     private ServerEvents() {}
 
     public static void register() {
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            // The creative tab contents themselves are built by the client that opens the inventory;
+            // what matters here is that the items and their tab exist on this side too.
+            ZCinemaLog.log("lifecycle", "emoji items=%d creative tab=%s",
+                    ModItems.EMOJIS.size(), ModItems.EMOJI_TAB.location());
+        });
+
         PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
             if (!(level instanceof ServerLevel serverLevel)) return true;
             if (!state.is(ModBlocks.SCREEN)) return true;
