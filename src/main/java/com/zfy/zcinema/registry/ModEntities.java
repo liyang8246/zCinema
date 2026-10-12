@@ -12,7 +12,9 @@ public final class ModEntities {
     public static final EntityType<ThrownEmoji> THROWN_EMOJI = Registry.register(
             BuiltInRegistries.ENTITY_TYPE, ZCinema.id("thrown_emoji"),
             EntityType.Builder.<ThrownEmoji>of(ThrownEmoji::new, MobCategory.MISC)
-                    .sized(0.25F, 0.25F)
+                    // The box is what Minecraft scales for the render distance (64 times its size),
+                    // and what the throw's own size is drawn at, so it covers the two block picture.
+                    .sized(ThrownEmoji.SIZE, ThrownEmoji.SIZE)
                     .clientTrackingRange(8)
                     .updateInterval(1)
                     .build(ZCinema.id("thrown_emoji").toString()));
