@@ -3,7 +3,6 @@ package com.zfy.zcinema.entity;
 import com.zfy.zcinema.registry.ModEntities;
 import com.zfy.zcinema.registry.ModItems;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.EntityType;
@@ -58,27 +57,13 @@ public class ThrownEmoji extends ThrowableItemProjectile {
     }
 
     /**
-     * Hangs the picture on the face that was hit, centred on the block just before it - the same
-     * block a thrown egg would hatch its chicken in.
+     * Leaves the picture in the block before the one that was hit - the same block a thrown egg
+     * would hatch its chicken in - and lets it float up from there.
      */
     private void splat(BlockHitResult hit) {
-        BlockPos hitPos = hit.getBlockPos();
-        Direction face = hit.getDirection();
-        BlockPos anchor = hitPos.relative(face);
-        double centerX = anchor.getX() + 0.5;
-        double centerY = anchor.getY() + 0.5;
-        double centerZ = anchor.getZ() + 0.5;
-        // Snap the centre onto the surface that was hit, so the picture hangs on the wall instead
-        // of floating in the block in front of it.
-        Vec3 center = switch (face) {
-            case DOWN -> new Vec3(centerX, hitPos.getY(), centerZ);
-            case UP -> new Vec3(centerX, hitPos.getY() + 1.0, centerZ);
-            case NORTH -> new Vec3(centerX, centerY, hitPos.getZ());
-            case SOUTH -> new Vec3(centerX, centerY, hitPos.getZ() + 1.0);
-            case WEST -> new Vec3(hitPos.getX(), centerY, centerZ);
-            case EAST -> new Vec3(hitPos.getX() + 1.0, centerY, centerZ);
-        };
-        this.level().addFreshEntity(new EmojiSplat(this.level(), center, face, this.getItem()));
+        BlockPos anchor = hit.getBlockPos().relative(hit.getDirection());
+        Vec3 center = new Vec3(anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5);
+        this.level().addFreshEntity(new EmojiSplat(this.level(), center, this.getItem()));
         this.level().playSound(null, anchor, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.NEUTRAL, 0.8F, 1.4F);
     }
 }
