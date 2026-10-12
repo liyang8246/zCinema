@@ -1,0 +1,6 @@
+{
+  "textures": {
+    "layer0": "zcinema:item/emoji_smiling_face_with_tear"
+  },
+  "parent": "minecraft:item/generated"
+}

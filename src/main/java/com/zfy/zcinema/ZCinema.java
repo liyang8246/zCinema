@@ -7,6 +7,8 @@ import com.zfy.zcinema.event.ServerEvents;
 import com.zfy.zcinema.net.ModNetworking;
 import com.zfy.zcinema.registry.ModBlockEntities;
 import com.zfy.zcinema.registry.ModBlocks;
+import com.zfy.zcinema.registry.ModEntities;
+import com.zfy.zcinema.registry.ModItems;
 import com.zfy.zcinema.registry.ModMenus;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -28,6 +30,8 @@ public class ZCinema implements ModInitializer {
         ModBlocks.register();
         ModBlockEntities.register();
         ModMenus.register();
+        ModItems.register();
+        ModEntities.register();
 
         ModNetworking.registerCommon();
         ModNetworking.registerServerHandlers();

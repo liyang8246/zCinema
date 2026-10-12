@@ -37,6 +37,35 @@
 
 ---
 
+## 表情物品
+
+32 个 emoji，贴图用的是 **Apple 版本**，创造模式物品栏里多一个「表情 / Emoji」页签（服务器默认也是创造模式）：
+
+```
+😂 emoji_joy                    ❤️ emoji_heart                  🤣 emoji_rofl
+👍 emoji_thumbsup               😭 emoji_sob                    🙏 emoji_pray
+😘 emoji_kissing_heart          🥰 emoji_smiling_face_with_3_hearts
+😍 emoji_heart_eyes             😊 emoji_blush                  🎉 emoji_tada
+😁 emoji_grin                   💕 emoji_two_hearts             🥺 emoji_pleading_face
+😅 emoji_sweat_smile            🤔 emoji_thinking               🤗 emoji_hugs
+😉 emoji_wink                   🙄 emoji_roll_eyes              😎 emoji_sunglasses
+✨ emoji_sparkles               💀 emoji_skull                  🥲 emoji_smiling_face_with_tear
+😏 emoji_smirk                  😢 emoji_cry                    😩 emoji_weary
+🤩 emoji_star_struck            😡 emoji_rage                   😋 emoji_yum
+👏 emoji_clap                   🔥 emoji_fire                   💯 emoji_hundred
+```
+
+- 手持右键 = 像鸡蛋一样扔出去，但速度是鸡蛋的 **8 倍**（12 格/游戏刻）。
+- 砸到方块时，在**被砸方块前面那一格**的位置、贴着被砸的那一面，留下一张 **3x3 方块大**的表情图案
+  —— 位置规则和「丢鸡蛋碰到墙，小鸡在墙前面那格孵出来」一样。
+- 图案走原版**自发光**管线：不参与方块光照，晚上、暗处一样看得清；光影下会被当作自发光表面
+  （Complementary 之类走眼睛程序，会稍微提亮一点），不会被当成方块去加光而过曝。
+- 图案 5 分钟后淡出消失，也**不写进存档**，不会越丢越乱、重进就干净了。
+
+贴图来源：Apple emoji 原图，取自 [iamcal/emoji-data](https://github.com/iamcal/emoji-data)（图 © Apple Inc.）。
+
+---
+
 ## 它是怎么工作的
 
 客户端时钟、缓冲、纠偏全部照 Create Cinema 的做法移植，只是把「投影仪」换成了混凝土墙上的屏幕方块：
@@ -175,6 +204,7 @@ Java 21 与 Gradle 9.2 由 wrapper 自动处理，Fabric Loom 会下载 Minecraf
 
 - [JavaCV / JavaCPP / FFmpeg](https://github.com/bytedeco/javacv)（Apache-2.0）：本地解码 MP4 的画面与声音
 - [Fabric Loader / Fabric API](https://fabricmc.net/)：平台本体
+- [iamcal/emoji-data](https://github.com/iamcal/emoji-data)（数据库 CC-BY-4.0，图片 © Apple Inc.）：32 个表情物品的贴图
 - Minecraft：平台本体
 
 ## 许可

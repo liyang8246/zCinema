@@ -1,0 +1,6 @@
+{
+  "textures": {
+    "layer0": "zcinema:item/emoji_smirk"
+  },
+  "parent": "minecraft:item/generated"
+}

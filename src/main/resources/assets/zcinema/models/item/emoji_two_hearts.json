@@ -1,0 +1,6 @@
+{
+  "textures": {
+    "layer0": "zcinema:item/emoji_two_hearts"
+  },
+  "parent": "minecraft:item/generated"
+}

@@ -1,0 +1,6 @@
+{
+  "textures": {
+    "layer0": "zcinema:item/emoji_rofl"
+  },
+  "parent": "minecraft:item/generated"
+}
