@@ -20,8 +20,13 @@ public final class ModEntities {
     public static final EntityType<EmojiSplat> EMOJI_SPLAT = Registry.register(
             BuiltInRegistries.ENTITY_TYPE, ZCinema.id("emoji_splat"),
             EntityType.Builder.<EmojiSplat>of(EmojiSplat::new, MobCategory.MISC)
-                    .sized(0.25F, 0.25F)
+                    // The box is what Minecraft scales for the render distance (64 times its size),
+                    // so it has to cover the whole three block picture or the splat only shows up
+                    // when the viewer is standing right next to it. The entity is never moved by
+                    // physics, so a box that large cannot collide with anything.
+                    .sized(EmojiSplat.SIZE, EmojiSplat.SIZE)
                     .clientTrackingRange(8)
+                    .updateInterval(1)
                     .noSave()
                     .build(ZCinema.id("emoji_splat").toString()));
 

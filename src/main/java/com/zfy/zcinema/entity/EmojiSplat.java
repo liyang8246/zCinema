@@ -14,10 +14,10 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * The emoji picture a throw leaves behind: a flat, upright image three blocks wide and three
- * blocks tall that always turns to face whoever is looking at it. It drifts two blocks up over
- * its first two seconds, then hangs there.
+ * blocks tall that always turns to face whoever is looking at it. It shoots two blocks upward over
+ * a second and fades out right after.
  *
- * <p>It never saves - it is a throwaway souvenir that fades out after a while.
+ * <p>It never saves - it is a throwaway souvenir, gone a second and a half after it appears.
  */
 public class EmojiSplat extends Entity {
     private static final EntityDataAccessor<ItemStack> DATA_ITEM =
@@ -25,14 +25,14 @@ public class EmojiSplat extends Entity {
 
     /** The picture is three blocks across and three blocks tall. */
     public static final float SIZE = 3.0F;
-    /** How far it floats up after spawning, and how long that takes: two blocks in two seconds. */
+    /** How far it floats up after spawning, and how long that takes: two blocks in a second. */
     public static final double RISE_BLOCKS = 2.0D;
-    public static final int RISE_TICKS = 40;
+    public static final int RISE_TICKS = 20;
     private static final double RISE_PER_TICK = RISE_BLOCKS / RISE_TICKS;
-    /** How long a picture stays around, in ticks. */
-    public static final int LIFETIME = 20 * 60 * 5;
-    /** The last ticks of that fade the picture out instead of popping it. */
-    public static final int FADE_TICKS = 20;
+    /** The last ticks of its life fade the picture out instead of popping it. */
+    public static final int FADE_TICKS = 10;
+    /** Rise, then fade: the picture is gone about a second and a half after it appears. */
+    public static final int LIFETIME = RISE_TICKS + FADE_TICKS;
 
     public EmojiSplat(EntityType<? extends EmojiSplat> type, Level level) {
         super(type, level);

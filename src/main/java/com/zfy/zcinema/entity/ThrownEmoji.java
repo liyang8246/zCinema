@@ -57,11 +57,12 @@ public class ThrownEmoji extends ThrowableItemProjectile {
     }
 
     /**
-     * Leaves the picture in the block before the one that was hit - the same block a thrown egg
-     * would hatch its chicken in - and lets it float up from there.
+     * Leaves the picture two blocks out from the wall that was hit - one block further than the
+     * cell a thrown egg would hatch its chicken in, which is what keeps a three block wide picture
+     * clear of the wall - and lets it float up from there.
      */
     private void splat(BlockHitResult hit) {
-        BlockPos anchor = hit.getBlockPos().relative(hit.getDirection());
+        BlockPos anchor = hit.getBlockPos().relative(hit.getDirection(), 2);
         Vec3 center = new Vec3(anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5);
         this.level().addFreshEntity(new EmojiSplat(this.level(), center, this.getItem()));
         this.level().playSound(null, anchor, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.NEUTRAL, 0.8F, 1.4F);
