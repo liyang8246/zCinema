@@ -37,7 +37,8 @@ public class EmojiItem extends Item {
         if (!level.isClientSide) {
             ThrownEmoji thrown = new ThrownEmoji(level, player);
             thrown.setItem(stack);
-            thrown.shootFromRotation(player, player.getXRot(), player.getYRot(), 0.0F, ThrownEmoji.SPEED, 1.0F);
+            thrown.shootFromRotation(player, player.getXRot(), player.getYRot(), 0.0F, ThrownEmoji.SPEED,
+                    ThrownEmoji.INACCURACY);
             level.addFreshEntity(thrown);
         }
         player.awardStat(Stats.ITEM_USED.get(this));

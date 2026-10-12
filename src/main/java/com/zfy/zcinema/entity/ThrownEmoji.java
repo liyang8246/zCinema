@@ -19,8 +19,11 @@ import net.minecraft.world.phys.Vec3;
  * surface it hits.
  */
 public class ThrownEmoji extends ThrowableItemProjectile {
-    /** Three times the 1.5 blocks per tick an egg leaves the hand with. */
-    public static final float SPEED = 4.5F;
+    /** Five times the 1.5 blocks per tick an egg leaves the hand with. */
+    public static final float SPEED = 7.5F;
+    /** How far a throw can stray from where it was aimed, in the same units an egg uses 1. Five
+     *  times an egg's spread: a spray of emoji rather than a laser. */
+    public static final float INACCURACY = 5.0F;
     /** At this speed it sails past the view distance in seconds; never keep one forever. */
     private static final int MAX_LIFETIME_TICKS = 60;
 

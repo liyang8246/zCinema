@@ -5,6 +5,9 @@
   "mixins": [
     "ChunkMapMixin"
   ],
+  "client": [
+    "MinecraftEmojiThrowMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }
