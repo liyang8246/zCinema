@@ -1,0 +1,16 @@
+root = true
+
+# Mirrors google-java-format's AOSP style, which Spotless enforces (see build.gradle).
+# Keep the IDE and the Gradle formatter agreeing so a save never fights spotlessApply.
+[*.java]
+charset = utf-8
+indent_style = space
+indent_size = 4
+continuation_indent_size = 8
+max_line_length = 100
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*]
+insert_final_newline = true
+trim_trailing_whitespace = true

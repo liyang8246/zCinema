@@ -1,5 +1,6 @@
 plugins {
     id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'com.diffplug.spotless' version "${spotless_version}"
     id 'maven-publish'
 }
 
@@ -118,6 +119,29 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+// Formatting: Spotless is the Gradle equivalent of Prettier, google-java-format (AOSP variant,
+// 4-space indent) is the community-standard rule set. `./gradlew spotlessCheck` fails the build,
+// `./gradlew spotlessApply` rewrites files. spotlessCheck also runs as part of `build`/`check`.
+// - importOrder after the formatter restores this codebase's IntelliJ layout (other packages
+//   first, then java/javax, static imports last); google-java-format itself always sorts imports
+//   alphabetically and drops unused ones, and its reorderImports(false) only switches the sort
+//   style, it does not disable sorting.
+// - formatJavadoc(false) keeps hand-wrapped Javadoc untouched: the comments here are manually
+//   wrapped and full of inline {@code}/{@link} tags, which gjf's reflow breaks mid-tag.
+spotless {
+    java {
+        googleJavaFormat("${google_java_format_version}").formatJavadoc(false).aosp()
+        importOrder('', 'java', 'javax', '\\#')
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    format 'misc', {
+        target '*.gradle', 'gradle.properties', '.gitignore', '*.md', '*.json'
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
 }
 
 publishing {
