@@ -15,13 +15,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(Minecraft.class)
 public abstract class MinecraftEmojiThrowMixin {
-    @Shadow
-    private int rightClickDelay;
+    @Shadow private int rightClickDelay;
 
     @Inject(method = "startUseItem", at = @At("TAIL"))
     private void zcinema$fasterEmojiThrow(CallbackInfo ci) {
         Minecraft minecraft = (Minecraft) (Object) this;
-        if (minecraft.player != null && minecraft.player.getMainHandItem().getItem() instanceof EmojiItem) {
+        if (minecraft.player != null
+                && minecraft.player.getMainHandItem().getItem() instanceof EmojiItem) {
             this.rightClickDelay = 2;
         }
     }

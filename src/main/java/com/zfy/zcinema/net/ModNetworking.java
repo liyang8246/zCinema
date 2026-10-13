@@ -28,8 +28,10 @@ public final class ModNetworking {
     /** Both sides: register the packet types. Must run before any packet is sent. */
     public static void registerCommon() {
         PayloadTypeRegistry.playC2S().register(C2SSetUrlPacket.TYPE, C2SSetUrlPacket.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(C2SControlPacket.TYPE, C2SControlPacket.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(C2SReportMediaPacket.TYPE, C2SReportMediaPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S()
+                .register(C2SControlPacket.TYPE, C2SControlPacket.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S()
+                .register(C2SReportMediaPacket.TYPE, C2SReportMediaPacket.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(C2SHealthPacket.TYPE, C2SHealthPacket.STREAM_CODEC);
 
         // Only ever received on the client; the client entrypoint registers the receiver.
@@ -38,32 +40,43 @@ public final class ModNetworking {
 
     /** Server side: C2S receivers. */
     public static void registerServerHandlers() {
-        ServerPlayNetworking.registerGlobalReceiver(C2SSetUrlPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> handleC2S(payload, context.player())));
-        ServerPlayNetworking.registerGlobalReceiver(C2SControlPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> handleC2S(payload, context.player())));
-        ServerPlayNetworking.registerGlobalReceiver(C2SReportMediaPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> handleC2S(payload, context.player())));
-        ServerPlayNetworking.registerGlobalReceiver(C2SHealthPacket.TYPE, (payload, context) ->
-                context.server().execute(() -> handleC2S(payload, context.player())));
+        c2s(C2SSetUrlPacket.TYPE);
+        c2s(C2SControlPacket.TYPE);
+        c2s(C2SReportMediaPacket.TYPE);
+        c2s(C2SHealthPacket.TYPE);
+    }
+
+    private static <T extends CustomPacketPayload> void c2s(CustomPacketPayload.Type<T> type) {
+        ServerPlayNetworking.registerGlobalReceiver(
+                type,
+                (payload, context) ->
+                        context.server().execute(() -> handleC2S(payload, context.player())));
     }
 
     private static void handleC2S(CustomPacketPayload payload, ServerPlayer player) {
         if (player == null) return;
-        ZCinemaLog.log("net", "C2S %s from=%s", ZCinemaLog.shorten(payload.toString(), 220),
+        ZCinemaLog.log(
+                "net",
+                "C2S %s from=%s",
+                ZCinemaLog.shorten(payload.toString(), 220),
                 player.getName().getString());
-        var pos = switch (payload) {
-            case C2SSetUrlPacket p -> p.pos();
-            case C2SControlPacket p -> p.pos();
-            case C2SReportMediaPacket p -> p.pos();
-            case C2SHealthPacket p -> p.pos();
-            default -> null;
-        };
+        var pos =
+                switch (payload) {
+                    case C2SSetUrlPacket p -> p.pos();
+                    case C2SControlPacket p -> p.pos();
+                    case C2SReportMediaPacket p -> p.pos();
+                    case C2SHealthPacket p -> p.pos();
+                    default -> null;
+                };
         if (pos == null) return;
         double distanceSqr = player.distanceToSqr(Vec3.atCenterOf(pos));
         if (distanceSqr > CONTROL_RANGE_SQR) {
-            ZCinemaLog.log("net", "C2S %s from=%s REJECTED: distance=%.1f", payload.type().id(),
-                    player.getName().getString(), Math.sqrt(distanceSqr));
+            ZCinemaLog.log(
+                    "net",
+                    "C2S %s from=%s REJECTED: distance=%.1f",
+                    payload.type().id(),
+                    player.getName().getString(),
+                    Math.sqrt(distanceSqr));
             return;
         }
         if (player.level().getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
@@ -72,8 +85,7 @@ public final class ModNetworking {
                 case C2SControlPacket p -> be.control(player, p.action(), p.positionMs());
                 case C2SReportMediaPacket p -> be.reportDuration(p.url(), p.durationMs());
                 case C2SHealthPacket p -> be.reportPlaybackHealth(player, p.health());
-                default -> {
-                }
+                default -> {}
             }
         }
     }
@@ -85,13 +97,21 @@ public final class ModNetworking {
     }
 
     /** Send a payload to every player within {@code radius} of {@code center}. */
-    public static void sendToPlayersNear(ServerLevel level, Vec3 center, double radius, CustomPacketPayload payload) {
+    public static void sendToPlayersNear(
+            ServerLevel level, Vec3 center, double radius, CustomPacketPayload payload) {
         int players = 0;
         for (ServerPlayer player : PlayerLookup.around(level, center, radius)) {
             ServerPlayNetworking.send(player, payload);
             players++;
         }
-        ZCinemaLog.log("net", "S2C %s -> %d players around %.1f/%.1f/%.1f (r=%.0f)",
-                ZCinemaLog.shorten(payload.toString(), 220), players, center.x, center.y, center.z, radius);
+        ZCinemaLog.log(
+                "net",
+                "S2C %s -> %d players around %.1f/%.1f/%.1f (r=%.0f)",
+                ZCinemaLog.shorten(payload.toString(), 220),
+                players,
+                center.x,
+                center.y,
+                center.z,
+                radius);
     }
 }

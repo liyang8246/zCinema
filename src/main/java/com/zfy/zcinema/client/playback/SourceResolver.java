@@ -35,17 +35,20 @@ public final class SourceResolver {
     static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                     + "Chrome/131.0.0.0 Safari/537.36";
-    private static final Pattern MEDIA_PATH = Pattern.compile(
-            "\\.(mp4|flv|m3u8|mkv|mov|m4v|webm|mpd|ts|avi)$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern MEDIA_URL = Pattern.compile(
-            "https?://[^\\s\"'<>\\\\]+\\.(mp4|flv|m3u8|mkv|mov|m4v|webm|mpd)(\\?[^\\s\"'<>\\\\]*)?",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern MEDIA_PATH =
+            Pattern.compile(
+                    "\\.(mp4|flv|m3u8|mkv|mov|m4v|webm|mpd|ts|avi)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MEDIA_URL =
+            Pattern.compile(
+                    "https?://[^\\s\"'<>\\\\]+\\.(mp4|flv|m3u8|mkv|mov|m4v|webm|mpd)(\\?[^\\s\"'<>\\\\]*)?",
+                    Pattern.CASE_INSENSITIVE);
 
     private static final Map<String, Resolved> CACHE = new ConcurrentHashMap<>();
-    private static final HttpClient HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
+    private static final HttpClient HTTP =
+            HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NEVER)
+                    .build();
 
     private record Resolved(String url, long resolvedAt) {}
 
@@ -65,12 +68,16 @@ public final class SourceResolver {
     static String resolve(String url) throws IOException {
         if (url == null || url.isBlank()) throw new IOException("empty url");
         if (looksDirect(url)) {
-            ZCinemaLog.log("resolver", "direct link, no resolve needed: %s", ZCinemaLog.shorten(url, 300));
+            ZCinemaLog.log(
+                    "resolver", "direct link, no resolve needed: %s", ZCinemaLog.shorten(url, 300));
             return url;
         }
         Resolved cached = CACHE.get(url);
         if (cached != null && System.currentTimeMillis() - cached.resolvedAt() < CACHE_MILLIS) {
-            ZCinemaLog.log("resolver", "cache hit: %s -> %s", ZCinemaLog.shorten(url, 200),
+            ZCinemaLog.log(
+                    "resolver",
+                    "cache hit: %s -> %s",
+                    ZCinemaLog.shorten(url, 200),
                     ZCinemaLog.shorten(cached.url(), 200));
             return cached.url();
         }
@@ -78,8 +85,12 @@ public final class SourceResolver {
         String resolved = follow(url);
         CACHE.put(url, new Resolved(resolved, System.currentTimeMillis()));
         ZCinema.LOGGER.info("Resolved {} to a direct stream", url);
-        ZCinemaLog.log("resolver", "resolved in %dms: %s -> %s", System.currentTimeMillis() - started,
-                ZCinemaLog.shorten(url, 200), ZCinemaLog.shorten(resolved, 200));
+        ZCinemaLog.log(
+                "resolver",
+                "resolved in %dms: %s -> %s",
+                System.currentTimeMillis() - started,
+                ZCinemaLog.shorten(url, 200),
+                ZCinemaLog.shorten(resolved, 200));
         return resolved;
     }
 
@@ -94,12 +105,13 @@ public final class SourceResolver {
         for (int hop = 0; hop < MAX_HOPS; hop++) {
             HttpRequest request;
             try {
-                request = HttpRequest.newBuilder(URI.create(current))
-                        .timeout(Duration.ofSeconds(15))
-                        .header("User-Agent", USER_AGENT)
-                        .header("Referer", refererFor(current))
-                        .GET()
-                        .build();
+                request =
+                        HttpRequest.newBuilder(URI.create(current))
+                                .timeout(Duration.ofSeconds(15))
+                                .header("User-Agent", USER_AGENT)
+                                .header("Referer", refererFor(current))
+                                .GET()
+                                .build();
             } catch (IllegalArgumentException error) {
                 throw new IOException("malformed url " + current, error);
             }
@@ -113,7 +125,8 @@ public final class SourceResolver {
             int status = response.statusCode();
             String type = response.headers().firstValue("Content-Type").orElse("");
             if (status >= 200 && status < 300) {
-                if (type.startsWith("video/") || type.startsWith("audio/")
+                if (type.startsWith("video/")
+                        || type.startsWith("audio/")
                         || type.contains("octet-stream")) {
                     // It already points at media; we only needed the headers, so drop the body.
                     closeQuietly(response.body());
@@ -127,8 +140,10 @@ public final class SourceResolver {
                     current = matcher.group();
                     continue;
                 }
-                throw new IOException("the link answered " + (type.isBlank() ? "nothing playable" : type)
-                        + " instead of a video");
+                throw new IOException(
+                        "the link answered "
+                                + (type.isBlank() ? "nothing playable" : type)
+                                + " instead of a video");
             }
             if (status >= 300 && status < 400) {
                 String location = response.headers().firstValue("Location").orElse("");
@@ -148,10 +163,7 @@ public final class SourceResolver {
     }
 
     private static void closeQuietly(InputStream stream) {
-        try {
-            stream.close();
-        } catch (IOException ignored) {
-        }
+        ZCinemaLog.closeQuietly(stream);
     }
 
     static String refererFor(String url) {
@@ -169,7 +181,8 @@ public final class SourceResolver {
      * default "Lavf/..." user agent with a 403, and Bilibili's CDNs additionally want the site as
      * referer - without this, a perfectly resolvable parsing API still ends in "failed to stream".
      */
-    public static void applyStreamOptions(org.bytedeco.javacv.FFmpegFrameGrabber grabber, String url) {
+    public static void applyStreamOptions(
+            org.bytedeco.javacv.FFmpegFrameGrabber grabber, String url) {
         if (!url.startsWith("http://") && !url.startsWith("https://")) return;
         grabber.setOption("user_agent", USER_AGENT);
         if (isBilibili(url)) {
@@ -204,7 +217,8 @@ public final class SourceResolver {
     /** Readable reason for a failed resolve, for the control panel. */
     static String describe(Throwable error) {
         String message = String.valueOf(error.getMessage()).toLowerCase(Locale.ROOT);
-        if (message.contains("http 403") || message.contains("http 404")
+        if (message.contains("http 403")
+                || message.contains("http 404")
                 || message.contains("http 4")) {
             return "链接已失效（HTTP " + digits(message) + "），请重新获取";
         }

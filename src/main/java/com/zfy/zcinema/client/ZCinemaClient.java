@@ -24,13 +24,15 @@ public final class ZCinemaClient implements ClientModInitializer {
         ClientConfig.load();
 
         BlockEntityRenderers.register(ModBlockEntities.SCREEN_BE, CinemaScreenRenderer::new);
-        MenuScreens.register(ModMenus.SCREEN, CinemaScreenUI::create);
+        MenuScreens.register(ModMenus.SCREEN, CinemaScreenUI::new);
 
         EntityRendererRegistry.register(ModEntities.THROWN_EMOJI, ThrownEmojiRenderer::new);
         EntityRendererRegistry.register(ModEntities.EMOJI_SPLAT, EmojiSplatRenderer::new);
 
-        ClientPlayNetworking.registerGlobalReceiver(S2CStatePacket.TYPE, (payload, context) ->
-                context.client().execute(() -> ClientPlayback.handleState(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(
+                S2CStatePacket.TYPE,
+                (payload, context) ->
+                        context.client().execute(() -> ClientPlayback.handleState(payload)));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> ClientPlayback.tick());
         ClientTickEvents.END_CLIENT_TICK.register(client -> HudHider.tick());

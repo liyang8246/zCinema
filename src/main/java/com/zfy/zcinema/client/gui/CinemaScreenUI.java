@@ -6,17 +6,17 @@ import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.playback.ClientPlayback;
 import com.zfy.zcinema.client.playback.PlaybackSession;
 import com.zfy.zcinema.gui.CinemaScreenMenu;
+import com.zfy.zcinema.net.ModNetworking;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.C2SSetUrlPacket;
-import net.minecraft.core.BlockPos;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import com.zfy.zcinema.net.ModNetworking;
 
 /**
  * The screen's control panel: URL box, play/pause and a seek slider. Everyone who opens it drives
@@ -33,12 +33,10 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
     private Button playButton;
     private SeekSlider slider;
 
-    public static CinemaScreenUI create(CinemaScreenMenu menu, net.minecraft.world.entity.player.Inventory inventory,
-                                        Component title) {
-        return new CinemaScreenUI(menu, inventory, title);
-    }
-
-    public CinemaScreenUI(CinemaScreenMenu menu, net.minecraft.world.entity.player.Inventory inventory, Component title) {
+    public CinemaScreenUI(
+            CinemaScreenMenu menu,
+            net.minecraft.world.entity.player.Inventory inventory,
+            Component title) {
         super(menu, inventory, title);
         this.imageWidth = WIDTH;
         this.imageHeight = HEIGHT;
@@ -53,29 +51,56 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         int left = this.leftPos;
         int top = this.topPos;
 
-        urlField = new EditBox(this.font, left + 8, top + 20, 186, 18, Component.translatable("gui.zcinema.url"));
-        urlField.setMaxLength(2048);
+        urlField =
+                new EditBox(
+                        this.font,
+                        left + 8,
+                        top + 20,
+                        186,
+                        18,
+                        Component.translatable("gui.zcinema.url"));
+        urlField.setMaxLength(ZCinema.MAX_URL_LENGTH);
         if (screen != null) urlField.setValue(screen.clientUrl());
         addRenderableWidget(urlField);
 
-        addRenderableWidget(Button.builder(Component.translatable("gui.zcinema.load"), button -> {
-            if (screen != null) {
-                ZCinemaLog.log("ui", "load screen=%s url=%s", screen.getBlockPos().toShortString(),
-                        ZCinemaLog.shorten(urlField.getValue(), 300));
-                ModNetworking.sendToServer(new C2SSetUrlPacket(screen.getBlockPos(), urlField.getValue()));
-            }
-        }).bounds(left + 198, top + 20, 50, 18).build());
+        addRenderableWidget(
+                Button.builder(
+                                Component.translatable("gui.zcinema.load"),
+                                button -> {
+                                    if (screen != null) {
+                                        ZCinemaLog.log(
+                                                "ui",
+                                                "load screen=%s url=%s",
+                                                screen.getBlockPos().toShortString(),
+                                                ZCinemaLog.shorten(urlField.getValue(), 300));
+                                        ModNetworking.sendToServer(
+                                                new C2SSetUrlPacket(
+                                                        screen.getBlockPos(), urlField.getValue()));
+                                    }
+                                })
+                        .bounds(left + 198, top + 20, 50, 18)
+                        .build());
 
-        playButton = addRenderableWidget(Button.builder(Component.empty(), button -> togglePlay())
-                .bounds(left + 8, top + 44, 54, 20).build());
+        playButton =
+                addRenderableWidget(
+                        Button.builder(Component.empty(), button -> togglePlay())
+                                .bounds(left + 8, top + 44, 54, 20)
+                                .build());
         updatePlayLabel();
 
-        addRenderableWidget(Button.builder(Component.translatable("gui.zcinema.remove"), button -> {
-            if (screen != null) {
-                ClientPlayback.control(screen.getBlockPos(), C2SControlPacket.Action.REMOVE);
-            }
-            onClose();
-        }).bounds(left + 8, top + 68, 54, 18).build());
+        addRenderableWidget(
+                Button.builder(
+                                Component.translatable("gui.zcinema.remove"),
+                                button -> {
+                                    if (screen != null) {
+                                        ClientPlayback.control(
+                                                screen.getBlockPos(),
+                                                C2SControlPacket.Action.REMOVE);
+                                    }
+                                    onClose();
+                                })
+                        .bounds(left + 8, top + 68, 54, 18)
+                        .build());
 
         slider = new SeekSlider(left + 66, top + 44, 182, 20);
         addRenderableWidget(slider);
@@ -84,16 +109,17 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
     private void togglePlay() {
         if (screen == null) return;
         boolean playing = screen.clientPlaying();
-        ClientPlayback.control(screen.getBlockPos(), playing
-                ? C2SControlPacket.Action.PAUSE
-                : C2SControlPacket.Action.PLAY);
+        ClientPlayback.control(
+                screen.getBlockPos(),
+                playing ? C2SControlPacket.Action.PAUSE : C2SControlPacket.Action.PLAY);
         updatePlayLabel();
     }
 
     private void updatePlayLabel() {
         if (playButton == null || screen == null) return;
         boolean playing = screen.clientPlaying();
-        playButton.setMessage(Component.translatable(playing ? "gui.zcinema.pause" : "gui.zcinema.play"));
+        playButton.setMessage(
+                Component.translatable(playing ? "gui.zcinema.pause" : "gui.zcinema.play"));
     }
 
     @Override
@@ -104,7 +130,9 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
             onClose();
             return;
         }
-        if (urlField != null && !urlField.isFocused() && screen != null
+        if (urlField != null
+                && !urlField.isFocused()
+                && screen != null
                 && !urlField.getValue().equals(screen.clientUrl())) {
             urlField.setValue(screen.clientUrl());
         }
@@ -117,20 +145,27 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
         super.render(graphics, mouseX, mouseY, partialTick);
         urlField.render(graphics, mouseX, mouseY, partialTick);
 
-        String status = ClientPlayback.status(screen.getBlockPos()) == PlaybackSession.Status.ERROR
-                ? statusKey() : Component.translatable(statusKey()).getString();
-        if (screen != null) {
-            ClientPlayback.SeekStatus seek = ClientPlayback.seekStatus(screen.getBlockPos());
-            if (seek.noRange()) {
-                // Rewinding a source that ignores Range requests costs a full re-decode; say so
-                // instead of looking like a hang.
-                status = status + "  "
-                        + Component.translatable("gui.zcinema.status.no_range").getString();
-            }
+        String status =
+                ClientPlayback.status(screen.getBlockPos()) == PlaybackSession.Status.ERROR
+                        ? statusKey()
+                        : Component.translatable(statusKey()).getString();
+        if (screen != null && !ClientPlayback.rangeSupported(screen.getBlockPos())) {
+            // Rewinding a source that ignores Range requests costs a full re-decode; say so
+            // instead of looking like a hang.
+            status =
+                    status
+                            + "  "
+                            + Component.translatable("gui.zcinema.status.no_range").getString();
         }
-        graphics.drawString(this.font, net.minecraft.network.chat.Component.literal(status),
-                this.leftPos + 8, this.topPos + 92, 0xFFAAAAAA, false);
-        graphics.drawString(this.font, timeText(), this.leftPos + 8, this.topPos + 104, 0xFFCCCCCC, false);
+        graphics.drawString(
+                this.font,
+                net.minecraft.network.chat.Component.literal(status),
+                this.leftPos + 8,
+                this.topPos + 92,
+                0xFFAAAAAA,
+                false);
+        graphics.drawString(
+                this.font, timeText(), this.leftPos + 8, this.topPos + 104, 0xFFCCCCCC, false);
     }
 
     /**
@@ -140,7 +175,8 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
      */
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        graphics.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, 0xFFE0E0E0, false);
+        graphics.drawString(
+                this.font, this.title, this.titleLabelX, this.titleLabelY, 0xFFE0E0E0, false);
     }
 
     private String statusKey() {
@@ -166,8 +202,11 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
     private Component timeText() {
         if (screen == null) return Component.literal("00:00 / 00:00");
-        return Component.literal(formatSeconds(ClientPlayback.displaySeconds(screen.getBlockPos()))
-                + " / " + formatSeconds(ClientPlayback.displayDurationSeconds(screen.getBlockPos())));
+        return Component.literal(
+                formatSeconds(ClientPlayback.displaySeconds(screen.getBlockPos()))
+                        + " / "
+                        + formatSeconds(
+                                ClientPlayback.displayDurationSeconds(screen.getBlockPos())));
     }
 
     private static String formatSeconds(double seconds) {
@@ -178,9 +217,18 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight,
+        graphics.fill(
+                this.leftPos,
+                this.topPos,
+                this.leftPos + this.imageWidth,
+                this.topPos + this.imageHeight,
                 0xC0101010);
-        graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + 1, 0xFF3C3C3C);
+        graphics.fill(
+                this.leftPos,
+                this.topPos,
+                this.leftPos + this.imageWidth,
+                this.topPos + 1,
+                0xFF3C3C3C);
     }
 
     /**
@@ -201,8 +249,10 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
 
         /** True from the mouse going down on the slider until the seek is committed. */
         private boolean pressed;
+
         /** Value we last asked the server to play, held on screen until the clock arrives there. */
         private double committedValue = Double.NaN;
+
         private long committedAt;
 
         SeekSlider(int x, int y, int width, int height) {
@@ -220,9 +270,7 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
             if (holdingCommit()) return; // the seek we just sent owns it until the clock arrives
             double duration = ClientPlayback.displayDurationSeconds(screen.getBlockPos());
             double master = ClientPlayback.displaySeconds(screen.getBlockPos());
-            this.value = duration > 0
-                    ? Mth.clamp(master / duration, 0.0, 1.0)
-                    : 0.0;
+            this.value = duration > 0 ? Mth.clamp(master / duration, 0.0, 1.0) : 0.0;
             this.updateMessage();
         }
 
@@ -251,8 +299,13 @@ public class CinemaScreenUI extends AbstractContainerScreen<CinemaScreenMenu> {
             if (duration <= 0.0) return;
             this.committedValue = this.value;
             this.committedAt = System.currentTimeMillis();
-            ZCinemaLog.log("ui", "seek commit screen=%s value=%.4f duration=%.3fs target=%.3fs",
-                    screen.getBlockPos().toShortString(), this.value, duration, this.value * duration);
+            ZCinemaLog.log(
+                    "ui",
+                    "seek commit screen=%s value=%.4f duration=%.3fs target=%.3fs",
+                    screen.getBlockPos().toShortString(),
+                    this.value,
+                    duration,
+                    this.value * duration);
             ClientPlayback.seek(screen.getBlockPos(), this.value * duration);
         }
 

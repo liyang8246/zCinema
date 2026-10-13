@@ -28,24 +28,33 @@ public final class ServerEvents {
     private ServerEvents() {}
 
     public static void register() {
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            // The creative tab contents themselves are built by the client that opens the inventory;
-            // what matters here is that the items and their tab exist on this side too.
-            ZCinemaLog.log("lifecycle", "emoji items=%d creative tab=%s",
-                    ModItems.EMOJIS.size(), ModItems.EMOJI_TAB.location());
-        });
+        ServerLifecycleEvents.SERVER_STARTED.register(
+                server -> {
+                    // The creative tab contents themselves are built by the client that opens the
+                    // inventory;
+                    // what matters here is that the items and their tab exist on this side too.
+                    ZCinemaLog.log(
+                            "lifecycle",
+                            "emoji items=%d creative tab=%s",
+                            ModItems.EMOJIS.size(),
+                            ModItems.EMOJI_TAB.location());
+                });
 
-        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
-            if (!(level instanceof ServerLevel serverLevel)) return true;
-            if (!state.is(ModBlocks.SCREEN)) return true;
-            CinemaScreenBlockEntity screen = findScreen(serverLevel, pos, state);
-            if (screen != null) {
-                ZCinemaLog.log("server", "screen block broken pos=%s -> dissolve %s", pos.toShortString(),
-                        screen.getBlockPos().toShortString());
-                screen.dissolveScreen();
-            }
-            return true;
-        });
+        PlayerBlockBreakEvents.BEFORE.register(
+                (level, player, pos, state, blockEntity) -> {
+                    if (!(level instanceof ServerLevel serverLevel)) return true;
+                    if (!state.is(ModBlocks.SCREEN)) return true;
+                    CinemaScreenBlockEntity screen = findScreen(serverLevel, pos, state);
+                    if (screen != null) {
+                        ZCinemaLog.log(
+                                "server",
+                                "screen block broken pos=%s -> dissolve %s",
+                                pos.toShortString(),
+                                screen.getBlockPos().toShortString());
+                        screen.dissolveScreen();
+                    }
+                    return true;
+                });
     }
 
     /** Called from the ChunkMap mixin right after a chunk is queued for a watching player. */
@@ -55,7 +64,8 @@ public final class ServerEvents {
         }
         int pushed = 0;
         for (var blockEntity : chunk.getBlockEntities().values()) {
-            if (blockEntity instanceof CinemaScreenBlockEntity screen && screen.hasScreenArea()
+            if (blockEntity instanceof CinemaScreenBlockEntity screen
+                    && screen.hasScreenArea()
                     && !screen.serverUrl().isBlank()) {
                 screen.broadcastState();
                 pushed++;
@@ -76,8 +86,10 @@ public final class ServerEvents {
      * otherwise the state sits somewhere else in the same flat rectangle - the block's facing tells
      * us which plane to search.
      */
-    private static @Nullable CinemaScreenBlockEntity findScreen(ServerLevel level, BlockPos pos, BlockState state) {
-        if (level.getChunkAt(pos).getBlockEntity(pos) instanceof CinemaScreenBlockEntity be && be.hasScreenArea()) {
+    private static @Nullable CinemaScreenBlockEntity findScreen(
+            ServerLevel level, BlockPos pos, BlockState state) {
+        if (level.getChunkAt(pos).getBlockEntity(pos) instanceof CinemaScreenBlockEntity be
+                && be.hasScreenArea()) {
             return be;
         }
         Direction facing = state.getOptionalValue(ScreenBlock.FACING).orElse(Direction.NORTH);
@@ -102,7 +114,8 @@ public final class ServerEvents {
                     }
                 }
                 cursor.set(x, y, z);
-                if (level.getBlockEntity(cursor) instanceof CinemaScreenBlockEntity be && be.hasScreenArea()) {
+                if (level.getBlockEntity(cursor) instanceof CinemaScreenBlockEntity be
+                        && be.hasScreenArea()) {
                     ScreenArea area = be.screenArea();
                     if (area != null && area.contains(pos)) {
                         return be;

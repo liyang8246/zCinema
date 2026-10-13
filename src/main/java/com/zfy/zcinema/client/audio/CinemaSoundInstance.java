@@ -1,6 +1,5 @@
 package com.zfy.zcinema.client.audio;
 
-import com.mojang.blaze3d.audio.Channel;
 import com.zfy.zcinema.ZCinema;
 import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
@@ -21,12 +20,13 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.valueproviders.ConstantFloat;
 
-import javax.sound.sampled.AudioFormat;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.sound.sampled.AudioFormat;
 
 /**
  * The screen's audio: a positional, streamed sound that decodes PCM from the same link the video
@@ -36,16 +36,20 @@ import java.util.concurrent.Executors;
  * It is never attenuated by distance either: it stays positional but keeps its volume wherever the
  * screen can be heard from.
  */
-class CinemaSoundInstance extends AbstractSoundInstance implements TickableSoundInstance, FabricSoundInstance {
-    private static final int FREEZE_STOP_TICKS = 40;          // 2s without a moving clock
+class CinemaSoundInstance extends AbstractSoundInstance
+        implements TickableSoundInstance, FabricSoundInstance {
+    private static final int FREEZE_STOP_TICKS = 40; // 2s without a moving clock
     private static final long UNSTARTED_WATCHDOG_MILLIS = 5_000L;
     private static final double DRIFT_RESTART_SECONDS = 2.0;
 
-    private static final ExecutorService OPEN_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
-        Thread thread = new Thread(runnable, "ZCinema Audio Open");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private static final ExecutorService OPEN_EXECUTOR =
+            Executors.newFixedThreadPool(
+                    2,
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "ZCinema Audio Open");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
 
     private final CinemaScreenBlockEntity be;
     private final BlockPos pos;
@@ -64,9 +68,10 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     private volatile double latestPlayTime;
 
     CinemaSoundInstance(PlaybackSession session) {
-        super(ResourceLocation.fromNamespaceAndPath(ZCinema.MODID,
-                        "screen_audio/" + Long.toUnsignedString(session.blockPos().asLong())),
-                SoundSource.RECORDS, RandomSource.create());
+        super(
+                ZCinema.id("screen_audio/" + Long.toUnsignedString(session.blockPos().asLong())),
+                SoundSource.RECORDS,
+                RandomSource.create());
         this.session = session;
         this.be = session.blockEntity();
         this.pos = session.blockPos();
@@ -81,8 +86,16 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         // The sound's own attenuation range is ignored under NONE; it is kept non-zero for other
         // sound engines that read it anyway.
         this.attenuation = SoundInstance.Attenuation.NONE;
-        this.sound = new Sound(location, ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
-                Sound.Type.FILE, true, false, 256);
+        this.sound =
+                new Sound(
+                        location,
+                        ConstantFloat.of(1.0F),
+                        ConstantFloat.of(1.0F),
+                        1,
+                        Sound.Type.FILE,
+                        true,
+                        false,
+                        256);
         updatePosition();
     }
 
@@ -94,40 +107,65 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     }
 
     @Override
-    public CompletableFuture<AudioStream> getAudioStream(SoundBufferLibrary soundBuffers, ResourceLocation location,
-                                                         boolean looping) {
+    public CompletableFuture<AudioStream> getAudioStream(
+            SoundBufferLibrary soundBuffers, ResourceLocation location, boolean looping) {
         openQueued = true;
-        ZCinemaLog.log("audio", "stream requested screen=%s media=%.3fs", pos.toShortString(),
+        ZCinemaLog.log(
+                "audio",
+                "stream requested screen=%s media=%.3fs",
+                pos.toShortString(),
                 session.mediaSeconds());
         return CompletableFuture.supplyAsync(this::openStream, OPEN_EXECUTOR);
     }
 
     private AudioStream openStream() {
         if (stopped || !session.matchesUrl(url)) {
-            ZCinemaLog.log("audio", "open skipped screen=%s stopped=%s urlChanged=%s", pos.toShortString(),
-                    stopped, !session.matchesUrl(url));
+            ZCinemaLog.log(
+                    "audio",
+                    "open skipped screen=%s stopped=%s urlChanged=%s",
+                    pos.toShortString(),
+                    stopped,
+                    !session.matchesUrl(url));
             return failedStream();
         }
         long started = System.currentTimeMillis();
         try {
-            StreamAudio opened = new StreamAudio(session.streamUrl(), session::audioReferenceSeconds,
-                    session.durationSeconds());
+            StreamAudio opened =
+                    new StreamAudio(
+                            session.streamUrl(),
+                            session::audioReferenceSeconds,
+                            session.durationSeconds());
             if (stopped || !session.matchesUrl(url)) {
                 opened.close();
-                ZCinemaLog.log("audio", "open discarded screen=%s stopped=%s urlChanged=%s",
-                        pos.toShortString(), stopped, !session.matchesUrl(url));
+                ZCinemaLog.log(
+                        "audio",
+                        "open discarded screen=%s stopped=%s urlChanged=%s",
+                        pos.toShortString(),
+                        stopped,
+                        !session.matchesUrl(url));
                 return failedStream();
             }
             stream = opened;
-            ZCinemaLog.log("audio", "stream built screen=%s start=%.3fs referenceAt=%.3fs took=%dms",
-                    pos.toShortString(), opened.startTime(), session.audioReferenceSeconds(),
+            ZCinemaLog.log(
+                    "audio",
+                    "stream built screen=%s start=%.3fs referenceAt=%.3fs took=%dms",
+                    pos.toShortString(),
+                    opened.startTime(),
+                    session.audioReferenceSeconds(),
                     System.currentTimeMillis() - started);
             return opened;
         } catch (Exception error) {
-            ZCinema.LOGGER.warn("Failed to open screen audio for {} at {}s (will retry)", url,
-                    session.mediaSeconds(), error);
-            ZCinemaLog.log("audio", "open FAILED screen=%s media=%.3fs after=%dms cause=%s",
-                    pos.toShortString(), session.mediaSeconds(), System.currentTimeMillis() - started,
+            ZCinema.LOGGER.warn(
+                    "Failed to open screen audio for {} at {}s (will retry)",
+                    url,
+                    session.mediaSeconds(),
+                    error);
+            ZCinemaLog.log(
+                    "audio",
+                    "open FAILED screen=%s media=%.3fs after=%dms cause=%s",
+                    pos.toShortString(),
+                    session.mediaSeconds(),
+                    System.currentTimeMillis() - started,
                     ZCinemaLog.cause(error));
             return failedStream();
         }
@@ -146,8 +184,11 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
         if (stopped) return;
         Minecraft minecraft = Minecraft.getInstance();
         updatePosition();
-        if (minecraft.level == null || minecraft.player == null
-                || !be.clientUrl().equals(url) || be.getLevel() == null || be.isRemoved()
+        if (minecraft.level == null
+                || minecraft.player == null
+                || !be.clientUrl().equals(url)
+                || be.getLevel() == null
+                || be.isRemoved()
                 || com.zfy.zcinema.client.playback.ClientPlayback.find(pos) != be
                 || !be.getLevel().dimension().equals(minecraft.level.dimension())) {
             stopInstance("url/screen/dimension changed");
@@ -167,7 +208,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
             return;
         }
         if (!session.clockMoving() && freezeTicks >= FREEZE_STOP_TICKS) {
-            ZCinema.LOGGER.debug("Screen {} audio clock froze for {} ticks, restarting", pos, freezeTicks);
+            ZCinema.LOGGER.debug(
+                    "Screen {} audio clock froze for {} ticks, restarting", pos, freezeTicks);
             driftRestart = true;
             stopInstance("clock frozen for " + freezeTicks + " ticks");
             return;
@@ -177,7 +219,8 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     /** True when the engine accepted the play request but the channel never came up. */
     boolean unstarted() {
         AudioStream current = stream;
-        return openQueued && !(current instanceof StreamAudio audio && audio.started())
+        return openQueued
+                && !(current instanceof StreamAudio audio && audio.started())
                 && System.currentTimeMillis() - createdMillis > UNSTARTED_WATCHDOG_MILLIS;
     }
 
@@ -231,25 +274,23 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
     void stopInstance(String reason) {
         if (stopped) return;
         stopped = true;
-        ZCinemaLog.log("audio", "instance stopped screen=%s reason=%s position=%s media=%s",
-                pos.toShortString(), reason, fmt(audioPositionSeconds()), fmt(session.mediaSeconds()));
+        ZCinemaLog.log(
+                "audio",
+                "instance stopped screen=%s reason=%s position=%s media=%s",
+                pos.toShortString(),
+                reason,
+                ZCinemaLog.fmt(audioPositionSeconds()),
+                ZCinemaLog.fmt(session.mediaSeconds()));
         // The sound engine polls isStopped() and closes its channel on the next tick; closing the
         // stream ourselves makes the sound go quiet immediately either way.
         closeStream();
-    }
-
-    private static String fmt(double value) {
-        return Double.isNaN(value) ? "n/a" : String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
     private void closeStream() {
         AudioStream current = stream;
         if (current == null) return;
         stream = null;
-        try {
-            current.close();
-        } catch (Exception ignored) {
-        }
+        ZCinemaLog.closeQuietly(current);
     }
 
     private void updatePosition() {
@@ -283,14 +324,14 @@ class CinemaSoundInstance extends AbstractSoundInstance implements TickableSound
 
         @Override
         public ByteBuffer read(int size) {
-            ByteBuffer buffer = ByteBuffer.allocateDirect(Math.max(1, size)).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer buffer =
+                    ByteBuffer.allocateDirect(Math.max(1, size)).order(ByteOrder.LITTLE_ENDIAN);
             while (buffer.hasRemaining()) buffer.put((byte) 0);
             buffer.flip();
             return buffer;
         }
 
         @Override
-        public void close() {
-        }
+        public void close() {}
     }
 }

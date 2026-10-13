@@ -35,8 +35,7 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     // enough that the block face and the picture do not fight over the same depth value.
     private static final float OFFSET = 0.01F;
 
-    public CinemaScreenRenderer(BlockEntityRendererProvider.Context context) {
-    }
+    public CinemaScreenRenderer(BlockEntityRendererProvider.Context context) {}
 
     /**
      * The quad can span a whole wall, but vanilla only knows the one block the state lives in:
@@ -50,8 +49,14 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
         ScreenArea area = blockEntity.screenArea();
         BlockPos min = area != null ? area.min() : blockEntity.getBlockPos();
         BlockPos max = area != null ? area.max() : blockEntity.getBlockPos();
-        return new AABB(min.getX(), min.getY(), min.getZ(),
-                max.getX() + 1.0, max.getY() + 1.0, max.getZ() + 1.0).inflate(1.0);
+        return new AABB(
+                        min.getX(),
+                        min.getY(),
+                        min.getZ(),
+                        max.getX() + 1.0,
+                        max.getY() + 1.0,
+                        max.getZ() + 1.0)
+                .inflate(1.0);
     }
 
     /** Same reason as the bounding box: a big screen stays in view from well beyond one block. */
@@ -59,8 +64,11 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     public boolean shouldRender(CinemaScreenBlockEntity blockEntity, Vec3 cameraPos) {
         ScreenArea area = blockEntity.screenArea();
         if (area == null) return BlockEntityRenderer.super.shouldRender(blockEntity, cameraPos);
-        double diagonal = Math.sqrt(area.width() * area.width() + area.height() * area.height()
-                + area.depth() * area.depth());
+        double diagonal =
+                Math.sqrt(
+                        area.width() * area.width()
+                                + area.height() * area.height()
+                                + area.depth() * area.depth());
         double reach = 128.0 + diagonal;
         return renderBounds(blockEntity).distanceToSqr(cameraPos) <= reach * reach;
     }
@@ -76,8 +84,13 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
     }
 
     @Override
-    public void render(CinemaScreenBlockEntity blockEntity, float partialTick, PoseStack poseStack,
-                       MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    public void render(
+            CinemaScreenBlockEntity blockEntity,
+            float partialTick,
+            PoseStack poseStack,
+            MultiBufferSource bufferSource,
+            int packedLight,
+            int packedOverlay) {
         FrameView frame = ClientPlayback.frame(blockEntity);
         ScreenArea area = blockEntity.screenArea();
         if (frame == null || frame.texture() == null || area == null) return;
@@ -132,9 +145,17 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
             flipU = false;
         }
 
-        float[][] fitted = letterbox(area.screenWidth(), area.screenHeight(), frame.width(), frame.height(),
-                corners, axisA, axisB);
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.entityTranslucentEmissive(frame.texture()));
+        float[][] fitted =
+                letterbox(
+                        area.screenWidth(),
+                        area.screenHeight(),
+                        frame.width(),
+                        frame.height(),
+                        corners,
+                        axisA,
+                        axisB);
+        VertexConsumer consumer =
+                bufferSource.getBuffer(RenderType.entityTranslucentEmissive(frame.texture()));
         poseStack.pushPose();
         drawQuad(consumer, poseStack.last(), normal, fitted, flipU);
         poseStack.popPose();
@@ -142,41 +163,60 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
 
     /** Full rectangle corners in block space (bl, tl, tr, br). */
     private float[][] corners(float minX, float minY, float maxX, float maxY, float z) {
-        return new float[][]{
-                {minX, minY, z},
-                {minX, maxY, z},
-                {maxX, maxY, z},
-                {maxX, minY, z},
+        return new float[][] {
+            {minX, minY, z},
+            {minX, maxY, z},
+            {maxX, maxY, z},
+            {maxX, minY, z},
         };
     }
 
     private float[][] cornersWithAxisX(float minZ, float minY, float maxZ, float maxY, float x) {
-        return new float[][]{
-                {x, minY, minZ},
-                {x, maxY, minZ},
-                {x, maxY, maxZ},
-                {x, minY, maxZ},
+        return new float[][] {
+            {x, minY, minZ},
+            {x, maxY, minZ},
+            {x, maxY, maxZ},
+            {x, minY, maxZ},
         };
     }
 
     private float[][] cornersWithAxisY(float minX, float minZ, float maxX, float maxZ, float y) {
-        return new float[][]{
-                {minX, y, minZ},
-                {minX, y, maxZ},
-                {maxX, y, maxZ},
-                {maxX, y, minZ},
+        return new float[][] {
+            {minX, y, minZ},
+            {minX, y, maxZ},
+            {maxX, y, maxZ},
+            {maxX, y, minZ},
         };
     }
 
     /** Shrinks the rectangle to the video aspect ratio (letterboxing). */
-    private float[][] letterbox(int screenWidth, int screenHeight, int frameWidth, int frameHeight, float[][] quad,
-                                int axisA, int axisB) {
+    private float[][] letterbox(
+            int screenWidth,
+            int screenHeight,
+            int frameWidth,
+            int frameHeight,
+            float[][] quad,
+            int axisA,
+            int axisB) {
         float screenAspect = screenWidth / (float) Math.max(1, screenHeight);
-        float videoAspect = frameWidth > 0 && frameHeight > 0 ? frameWidth / (float) frameHeight : 16.0F / 9.0F;
-        float minA = Math.min(Math.min(quad[0][axisA], quad[1][axisA]), Math.min(quad[2][axisA], quad[3][axisA]));
-        float maxA = Math.max(Math.max(quad[0][axisA], quad[1][axisA]), Math.max(quad[2][axisA], quad[3][axisA]));
-        float minB = Math.min(Math.min(quad[0][axisB], quad[1][axisB]), Math.min(quad[2][axisB], quad[3][axisB]));
-        float maxB = Math.max(Math.max(quad[0][axisB], quad[1][axisB]), Math.max(quad[2][axisB], quad[3][axisB]));
+        float videoAspect =
+                frameWidth > 0 && frameHeight > 0 ? frameWidth / (float) frameHeight : 16.0F / 9.0F;
+        float minA =
+                Math.min(
+                        Math.min(quad[0][axisA], quad[1][axisA]),
+                        Math.min(quad[2][axisA], quad[3][axisA]));
+        float maxA =
+                Math.max(
+                        Math.max(quad[0][axisA], quad[1][axisA]),
+                        Math.max(quad[2][axisA], quad[3][axisA]));
+        float minB =
+                Math.min(
+                        Math.min(quad[0][axisB], quad[1][axisB]),
+                        Math.min(quad[2][axisB], quad[3][axisB]));
+        float maxB =
+                Math.max(
+                        Math.max(quad[0][axisB], quad[1][axisB]),
+                        Math.max(quad[2][axisB], quad[3][axisB]));
         float halfA = (maxA - minA) * 0.5F;
         float halfB = (maxB - minB) * 0.5F;
         if (videoAspect > screenAspect) halfB = halfA / videoAspect;
@@ -197,12 +237,17 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaScreenBlo
         return out;
     }
 
-    private void drawQuad(VertexConsumer consumer, PoseStack.Pose pose, Direction normal, float[][] c, boolean flipU) {
+    private void drawQuad(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            Direction normal,
+            float[][] c,
+            boolean flipU) {
         float[][] uvs = {
-                {0.0F, 1.0F},
-                {0.0F, 0.0F},
-                {1.0F, 0.0F},
-                {1.0F, 1.0F},
+            {0.0F, 1.0F},
+            {0.0F, 0.0F},
+            {1.0F, 0.0F},
+            {1.0F, 1.0F},
         };
         if (flipU) {
             for (float[] uv : uvs) uv[0] = 1.0F - uv[0];

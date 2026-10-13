@@ -3,13 +3,13 @@ package com.zfy.zcinema.client.playback;
 import com.zfy.zcinema.ZCinemaLog;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.client.audio.ScreenAudio;
+import com.zfy.zcinema.net.ModNetworking;
 import com.zfy.zcinema.net.packets.C2SControlPacket;
 import com.zfy.zcinema.net.packets.S2CStatePacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.core.BlockPos;
-import com.zfy.zcinema.net.ModNetworking;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -25,14 +25,20 @@ public final class ClientPlayback {
 
     private ClientPlayback() {}
 
+    /** Closes the session for a screen and forgets it. One place decides that discipline. */
+    private static void discard(BlockPos pos, String reason) {
+        PlaybackSession session = SESSIONS.remove(pos);
+        if (session != null) session.close(reason);
+    }
+
     /** Called from the screen renderer every frame it is visible. */
     public static FrameView frame(CinemaScreenBlockEntity be) {
-        if (be == null || be.getLevel() == null || be.isRemoved() || be.clientUrl().isBlank()) return null;
+        if (be == null || be.getLevel() == null || be.isRemoved() || be.clientUrl().isBlank())
+            return null;
         PlaybackSession session = SESSIONS.get(be.getBlockPos());
         if (session != null && !session.valid()) {
             // A screen that used to sit here is gone; its session must not play on.
-            session.close("screen gone");
-            SESSIONS.remove(be.getBlockPos());
+            discard(be.getBlockPos(), "screen gone");
             session = null;
         }
         if (find(be.getBlockPos()) != be) {
@@ -64,12 +70,13 @@ public final class ClientPlayback {
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, PlaybackSession> entry = iterator.next();
             PlaybackSession session = entry.getValue();
-            if (!session.valid() || session.blockEntity().clientUrl().isBlank()
+            if (!session.valid()
+                    || session.blockEntity().clientUrl().isBlank()
                     || !session.matchesUrl(session.blockEntity().clientUrl())) {
                 // The screen was taken down, emptied, its chunk went away, or it switched links:
                 // stop everything right now instead of letting it play on against a stale block
                 // entity or report the previous film's duration for the new one.
-                session.close("screen gone or url changed");
+                discard(entry.getKey(), "screen gone or url changed");
                 iterator.remove();
                 continue;
             }
@@ -87,11 +94,6 @@ public final class ClientPlayback {
         CinemaScreenBlockEntity be = find(pos);
         if (be == null || be.clientUrl().isBlank()) return PlaybackSession.Status.IDLE;
         return PlaybackSession.Status.LOADING;
-    }
-
-    public static double progress(BlockPos pos) {
-        PlaybackSession session = SESSIONS.get(pos);
-        return session == null ? 0.0 : session.progress();
     }
 
     /** Position to show in the UI: the shared clock, or our decode position before it arrives. */
@@ -128,12 +130,9 @@ public final class ClientPlayback {
      * Whether the source can be seeked cheaply, so the panel can explain slow drags instead of
      * just sitting in "buffering".
      */
-    public record SeekStatus(boolean active, boolean noRange) {}
-
-    public static SeekStatus seekStatus(BlockPos pos) {
+    public static boolean rangeSupported(BlockPos pos) {
         PlaybackSession session = SESSIONS.get(pos);
-        if (session == null) return new SeekStatus(false, false);
-        return new SeekStatus(session.seeking(), !session.rangeSupported());
+        return session == null || session.rangeSupported();
     }
 
     /** Duration to show in the UI: whatever the session or the server has learned. */
@@ -171,11 +170,15 @@ public final class ClientPlayback {
      */
     public static void seek(BlockPos pos, double seconds) {
         PlaybackSession session = SESSIONS.get(pos);
-        ZCinemaLog.log("ui", "seek screen=%s target=%.3fs localSession=%s", pos.toShortString(), seconds,
+        ZCinemaLog.log(
+                "ui",
+                "seek screen=%s target=%.3fs localSession=%s",
+                pos.toShortString(),
+                seconds,
                 session != null);
         if (session != null) session.requestSeek(seconds);
-        ModNetworking.sendToServer(new C2SControlPacket(pos, C2SControlPacket.Action.SEEK,
-                (long) (seconds * 1000L)));
+        ModNetworking.sendToServer(
+                new C2SControlPacket(pos, C2SControlPacket.Action.SEEK, (long) (seconds * 1000L)));
     }
 
     public static void control(BlockPos pos, C2SControlPacket.Action action) {
@@ -187,16 +190,20 @@ public final class ClientPlayback {
     public static void handleState(S2CStatePacket packet) {
         CinemaScreenBlockEntity be = find(packet.pos());
         if (be == null) return;
-        be.applyClientState(packet.url(), packet.positionMs(), packet.playing(), packet.frozen(),
-                packet.durationMs(), localLatencyMillis(), packet.hasArea(), packet.minX(), packet.minY(),
-                packet.minZ(), packet.maxX(), packet.maxY(), packet.maxZ(), packet.normal());
+        be.applyClientState(
+                packet.url(),
+                packet.positionMs(),
+                packet.playing(),
+                packet.frozen(),
+                packet.durationMs(),
+                localLatencyMillis(),
+                packet.area());
         // Stop a session that was playing the previous link right away: the renderer would replace
         // it on the next frame anyway, but until then its tick could report the old film's
         // duration (or health) for the new one.
         PlaybackSession session = SESSIONS.get(packet.pos());
         if (session != null && !session.matchesUrl(packet.url())) {
-            session.close("state switched url");
-            SESSIONS.remove(packet.pos());
+            discard(packet.pos(), "state switched url");
         }
     }
 

@@ -31,7 +31,8 @@ final class Billboard {
      * (x, z). Horizontal only, so the picture never leans back when the camera pitches.
      */
     static float yawTowards(Vec3 viewer, double x, double z) {
-        float lookYaw = (float) Mth.atan2(viewer.z - z, viewer.x - x) * (180.0F / (float) Math.PI) - 90.0F;
+        float lookYaw =
+                (float) Mth.atan2(viewer.z - z, viewer.x - x) * (180.0F / (float) Math.PI) - 90.0F;
         // Rotating the quad by -yaw is what makes its +Z face the direction that yaw points at.
         return -lookYaw * Mth.DEG_TO_RAD;
     }
@@ -47,10 +48,10 @@ final class Billboard {
     static void draw(VertexConsumer consumer, PoseStack.Pose pose, float half, int alpha) {
         float reach = half / SPRITE_FILL;
         float[][] corners = {
-                {-reach, -reach, 0.0F, 1.0F},   // bottom left
-                {-reach, reach, 0.0F, 0.0F},    // top left
-                {reach, reach, 1.0F, 0.0F},     // top right
-                {reach, -reach, 1.0F, 1.0F},    // bottom right
+            {-reach, -reach, 0.0F, 1.0F}, // bottom left
+            {-reach, reach, 0.0F, 0.0F}, // top left
+            {reach, reach, 1.0F, 0.0F}, // top right
+            {reach, -reach, 1.0F, 1.0F}, // bottom right
         };
         for (float[] corner : corners) {
             consumer.addVertex(pose, corner[0], corner[1], 0.0F)

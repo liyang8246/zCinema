@@ -6,22 +6,26 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
 
 /**
  * A viewer learned the real duration of the stream and shares it with everybody. The URL travels
  * with the report so a report that was already in flight while the screen switched links cannot
  * teach the new film the old film's length.
  */
-public record C2SReportMediaPacket(BlockPos pos, String url, long durationMs) implements CustomPacketPayload {
+public record C2SReportMediaPacket(BlockPos pos, String url, long durationMs)
+        implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<C2SReportMediaPacket> TYPE =
-            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(ZCinema.MODID, "report_media"));
+            new CustomPacketPayload.Type<>(ZCinema.id("report_media"));
 
-    public static final StreamCodec<ByteBuf, C2SReportMediaPacket> STREAM_CODEC = StreamCodec.composite(
-            BlockPos.STREAM_CODEC, C2SReportMediaPacket::pos,
-            ByteBufCodecs.stringUtf8(2048), C2SReportMediaPacket::url,
-            ByteBufCodecs.VAR_LONG, C2SReportMediaPacket::durationMs,
-            C2SReportMediaPacket::new);
+    public static final StreamCodec<ByteBuf, C2SReportMediaPacket> STREAM_CODEC =
+            StreamCodec.composite(
+                    BlockPos.STREAM_CODEC,
+                    C2SReportMediaPacket::pos,
+                    ByteBufCodecs.stringUtf8(ZCinema.MAX_URL_LENGTH),
+                    C2SReportMediaPacket::url,
+                    ByteBufCodecs.VAR_LONG,
+                    C2SReportMediaPacket::durationMs,
+                    C2SReportMediaPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

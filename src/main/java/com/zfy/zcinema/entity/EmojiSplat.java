@@ -25,12 +25,16 @@ public class EmojiSplat extends Entity {
 
     /** The picture is three blocks across and three blocks tall. */
     public static final float SIZE = 3.0F;
+
     /** How far it floats up after spawning, and how long that takes: two blocks in a second. */
     public static final double RISE_BLOCKS = 2.0D;
+
     public static final int RISE_TICKS = 20;
     private static final double RISE_PER_TICK = RISE_BLOCKS / RISE_TICKS;
+
     /** The last ticks of its life fade the picture out instead of popping it. */
     public static final int FADE_TICKS = 10;
+
     /** Rise, then fade: the picture is gone about a second and a half after it appears. */
     public static final int LIFETIME = RISE_TICKS + FADE_TICKS;
 
@@ -79,18 +83,21 @@ public class EmojiSplat extends Entity {
     @Override
     public AABB getBoundingBoxForCulling() {
         double half = SIZE * 0.5D;
-        return new AABB(this.getX() - half, this.getY() - half, this.getZ() - half,
-                this.getX() + half, this.getY() + half + RISE_BLOCKS, this.getZ() + half);
+        return new AABB(
+                this.getX() - half,
+                this.getY() - half,
+                this.getZ() - half,
+                this.getX() + half,
+                this.getY() + half + RISE_BLOCKS,
+                this.getZ() + half);
     }
 
     /** Nothing to save: the entity type is registered as unsaved. */
     @Override
-    protected void readAdditionalSaveData(CompoundTag tag) {
-    }
+    protected void readAdditionalSaveData(CompoundTag tag) {}
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag tag) {
-    }
+    protected void addAdditionalSaveData(CompoundTag tag) {}
 
     @Override
     public boolean isPickable() {

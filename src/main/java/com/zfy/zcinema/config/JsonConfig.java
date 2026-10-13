@@ -60,7 +60,8 @@ public final class JsonConfig {
         }
     }
 
-    public static double getDouble(JsonObject root, String key, double fallback, double min, double max) {
+    public static double getDouble(
+            JsonObject root, String key, double fallback, double min, double max) {
         JsonElement value = root.get(key);
         if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
             return fallback;

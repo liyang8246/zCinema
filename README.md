@@ -193,6 +193,25 @@ logs/zcinema.log
 
 > 日志里会包含完整的视频链接（直链通常带签名参数），公开发布前注意删除。
 
+## 代码规范
+
+Java 格式化用 [Spotless](https://github.com/diffplug/spotless) +
+[google-java-format](https://github.com/google/google-java-format)（AOSP 风格：4 空格缩进、
+续行 8 空格、100 列）——相当于 JS 那边的 Prettier + 一份社区标准配置，规则全部内置，无需维护
+配置文件。`.editorconfig` 让 IDE 与它保持一致。
+
+```bash
+./gradlew spotlessCheck   # 只检查（CI 跑这个）
+./gradlew spotlessApply   # 自动重写
+```
+
+`build` 会自动带上 `spotlessCheck`，格式不对直接构建失败。提交前跑一次 `spotlessApply` 即可。
+
+导入顺序特意保留本仓库习惯（先其它包、再 `java`/`javax`、静态导入最后），不按 google 的纯字母序；
+未使用的导入会被自动删掉。Javadoc 保持手工折行（`formatJavadoc(false)`），不被重排。
+
+CI（`.github/workflows/ci.yml`）在 push / PR 到 `main` 时执行 `./gradlew spotlessCheck build`。
+
 ## 构建
 
 ```bash

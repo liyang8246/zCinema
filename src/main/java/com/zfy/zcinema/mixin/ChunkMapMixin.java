@@ -17,9 +17,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ChunkMap.class)
 public abstract class ChunkMapMixin {
     @Inject(
-            method = "markChunkPendingToSend(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/chunk/LevelChunk;)V",
+            method =
+                    "markChunkPendingToSend(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/chunk/LevelChunk;)V",
             at = @At("TAIL"))
-    private static void zcinema$onChunkWatch(ServerPlayer player, LevelChunk chunk, CallbackInfo ci) {
+    private static void zcinema$onChunkWatch(
+            ServerPlayer player, LevelChunk chunk, CallbackInfo ci) {
         if (player.level() instanceof ServerLevel level) {
             ServerEvents.onChunkWatch(level, chunk.getPos());
         }

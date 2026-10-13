@@ -9,7 +9,6 @@ public final class DecodedFrame {
     public final int width;
     public final int height;
 
-    private boolean handedToTexture;
     private boolean closed;
 
     public DecodedFrame(NativeImage image, double ts) {
@@ -19,16 +18,9 @@ public final class DecodedFrame {
         this.height = image.getHeight();
     }
 
-    /** Marks this frame as owned by a texture; closing it afterwards would double free. */
-    public void handToTexture() {
-        this.handedToTexture = true;
-    }
-
     public void close() {
         if (closed) return;
         closed = true;
-        if (!handedToTexture) {
-            image.close();
-        }
+        image.close();
     }
 }

@@ -19,6 +19,12 @@ public class ZCinema implements ModInitializer {
     public static final String MODID = "zcinema";
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * Longest URL the panel, the block entity and the wire all agree on. Every layer caps at the
+     * same number so a link that fits the text box also survives the packet codec.
+     */
+    public static final int MAX_URL_LENGTH = 2048;
+
     public static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(MODID, path);
     }
