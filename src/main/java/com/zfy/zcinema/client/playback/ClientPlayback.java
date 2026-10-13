@@ -21,7 +21,6 @@ import java.util.Map;
  */
 public final class ClientPlayback {
     private static final Map<BlockPos, PlaybackSession> SESSIONS = new HashMap<>();
-    private static final long EXPIRE_MS = 10_000L;
 
     private ClientPlayback() {}
 
@@ -65,7 +64,9 @@ public final class ClientPlayback {
             clearAll();
             return;
         }
-        long now = System.currentTimeMillis();
+        // A session is only ever dropped when its screen really is gone (or changed links): being
+        // out of view is not a reason to tear the decoder down, because coming back into view has
+        // to be instant instead of a fresh open-and-buffer cycle.
         Iterator<Map.Entry<BlockPos, PlaybackSession>> iterator = SESSIONS.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, PlaybackSession> entry = iterator.next();
@@ -81,10 +82,6 @@ public final class ClientPlayback {
                 continue;
             }
             session.tick();
-            if (now - session.touchedAt() > EXPIRE_MS) {
-                session.close("expired (screen not rendered for " + EXPIRE_MS + "ms)");
-                iterator.remove();
-            }
         }
     }
 

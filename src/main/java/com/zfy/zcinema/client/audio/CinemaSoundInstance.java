@@ -40,7 +40,14 @@ class CinemaSoundInstance extends AbstractSoundInstance
         implements TickableSoundInstance, FabricSoundInstance {
     private static final int FREEZE_STOP_TICKS = 40; // 2s without a moving clock
     private static final long UNSTARTED_WATCHDOG_MILLIS = 5_000L;
-    private static final double DRIFT_RESTART_SECONDS = 2.0;
+
+    /**
+     * How far the sound may sit from the picture before it is reopened. Deliberately small: the
+     * wall-clock estimate of where the speakers are carries a fixed offset of up to ~100ms (one
+     * engine buffer plus the device buffer), and a large threshold lets that offset - and every
+     * slow drift - sit there forever. Anything the user can hear is worth correcting.
+     */
+    private static final double DRIFT_RESTART_SECONDS = 0.5;
 
     private static final ExecutorService OPEN_EXECUTOR =
             Executors.newFixedThreadPool(
@@ -134,7 +141,8 @@ class CinemaSoundInstance extends AbstractSoundInstance
                     new StreamAudio(
                             session.streamUrl(),
                             session::audioReferenceSeconds,
-                            session.durationSeconds());
+                            session.durationSeconds(),
+                            session::pausedMillis);
             if (stopped || !session.matchesUrl(url)) {
                 opened.close();
                 ZCinemaLog.log(
@@ -195,6 +203,13 @@ class CinemaSoundInstance extends AbstractSoundInstance
             return;
         }
         latestPlayTime = session.audioReferenceSeconds();
+        if (session.audioPaused()) {
+            // The game is paused: the clock is frozen on purpose and the sound engine has it
+            // stopped anyway, so a still clock is not a stall and must not count towards the
+            // watchdog below.
+            freezeTicks = 0;
+            return;
+        }
         if (!Double.isNaN(previousPlayTime) && latestPlayTime == previousPlayTime) {
             freezeTicks++;
         } else {

@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.DoubleSupplier;
+import java.util.function.LongSupplier;
 
 import javax.sound.sampled.AudioFormat;
 
@@ -51,6 +52,10 @@ public final class StreamAudio implements AudioStream {
     private final AudioFormat format;
     private final double duration;
     private final DoubleSupplier startSeconds;
+
+    /** Wall-clock time the game has spent paused; the speakers are stopped while it does. */
+    private final LongSupplier pausedMillis;
+
     private final double currentStart;
     private volatile double startTime = Double.NaN;
     private volatile boolean started;
@@ -83,7 +88,11 @@ public final class StreamAudio implements AudioStream {
 
     private long lastPositionLogAt;
 
-    public StreamAudio(String url, DoubleSupplier startSeconds, double knownDuration)
+    public StreamAudio(
+            String url,
+            DoubleSupplier startSeconds,
+            double knownDuration,
+            LongSupplier pausedMillis)
             throws IOException {
         long openedAt = System.currentTimeMillis();
         org.bytedeco.javacv.FFmpegFrameGrabber opened = null;
@@ -102,6 +111,7 @@ public final class StreamAudio implements AudioStream {
             // take a moment on a network stream, and seeking to a stale position is exactly what
             // makes the sound walk half a second behind the picture.
             this.startSeconds = startSeconds;
+            this.pausedMillis = pausedMillis;
             double currentSeconds = Math.max(0.0, startSeconds.getAsDouble());
             this.currentStart = duration > 0.0 ? wrap(currentSeconds, duration) : currentSeconds;
             // Seek after start(): JavaCV clears a pending timestamp inside start(), so a seek set
@@ -198,11 +208,15 @@ public final class StreamAudio implements AudioStream {
      * written into OpenAL runs up to about one queued buffer ahead of the play cursor and must
      * not be mistaken for what is audible right now. Silence padded over a data gap is trimmed
      * off the following content, so it never shifts this timeline either.
+     *
+     * <p>Time the game spent paused is subtracted: the sound engine is stopped for it, so that
+     * wall time never reached the speakers.
      */
     public double playedSeconds() {
         long base = firstReadAt;
         if (!started || base == 0L) return Double.NaN;
-        return startTime + (System.currentTimeMillis() - base) / 1000.0;
+        long playedMillis = System.currentTimeMillis() - base - pausedMillis.getAsLong();
+        return startTime + playedMillis / 1000.0;
     }
 
     @Override

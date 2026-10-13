@@ -27,8 +27,14 @@ public final class ClientConfig {
      * The sound is played this many milliseconds behind the displayed picture, to compensate the
      * display pipeline (a rendered frame reaches the eyes later than the sound reaches the ears).
      * Reported "audio is ~100ms ahead" is the usual symptom when this is too low.
+     *
+     * <p>Calibrate it, do not guess it: watch a clip with a sharp sound (a clap, a click) and raise
+     * this by 20ms at a time until the sound lands on the picture. The exact value is machine
+     * specific, because what it compensates is your monitor plus your audio device - which is also
+     * why the default is 0 rather than a guess. Reading the real playback head out of OpenAL would
+     * make this automatic, but that needs a mixin into SoundEngine's internals.
      */
-    public static int audioDelayMs = 100;
+    public static int audioDelayMs = 0;
 
     private ClientConfig() {}
 
