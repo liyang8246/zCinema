@@ -129,7 +129,7 @@ public final class SourceResolver {
                         || type.startsWith("audio/")
                         || type.contains("octet-stream")) {
                     // It already points at media; we only needed the headers, so drop the body.
-                    closeQuietly(response.body());
+                    ZCinemaLog.closeQuietly(response.body());
                     return current;
                 }
                 // Not media: the body may be JSON (or a page) that names the real address.
@@ -147,7 +147,7 @@ public final class SourceResolver {
             }
             if (status >= 300 && status < 400) {
                 String location = response.headers().firstValue("Location").orElse("");
-                closeQuietly(response.body());
+                ZCinemaLog.closeQuietly(response.body());
                 if (location.isBlank()) throw new IOException("redirect without a target");
                 try {
                     current = URI.create(current).resolve(location).toString();
@@ -156,14 +156,10 @@ public final class SourceResolver {
                 }
                 continue;
             }
-            closeQuietly(response.body());
+            ZCinemaLog.closeQuietly(response.body());
             throw new IOException("HTTP " + status + " for " + current);
         }
         throw new IOException("too many redirects");
-    }
-
-    private static void closeQuietly(InputStream stream) {
-        ZCinemaLog.closeQuietly(stream);
     }
 
     static String refererFor(String url) {
