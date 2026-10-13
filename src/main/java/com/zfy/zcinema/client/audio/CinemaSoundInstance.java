@@ -141,8 +141,7 @@ class CinemaSoundInstance extends AbstractSoundInstance
                     new StreamAudio(
                             session.streamUrl(),
                             session::audioReferenceSeconds,
-                            session.durationSeconds(),
-                            session::pausedMillis);
+                            session.durationSeconds());
             if (stopped || !session.matchesUrl(url)) {
                 opened.close();
                 ZCinemaLog.log(
@@ -248,15 +247,14 @@ class CinemaSoundInstance extends AbstractSoundInstance
     }
 
     /**
-     * Where the sound is on the media timeline. Measured from the real PCM already handed to the
-     * sound engine, not from the wall clock: if the engine takes a second to start pulling, the
-     * sound really is a second behind, and the estimate has to say so instead of reporting a
-     * position that only exists on paper. Before the first read the position is unknown.
+     * Where the sound is on the media timeline: the newest decoded frame minus what is still
+     * buffered, i.e. what the engine has been given. On the same axis as the picture, so the
+     * controller can compare the two directly. Unknown until the first read.
      */
     double audioPositionSeconds() {
         AudioStream current = stream;
         if (current instanceof StreamAudio audio && audio.started()) {
-            return audio.playedSeconds();
+            return audio.consumedMediaSeconds();
         }
         return Double.NaN;
     }

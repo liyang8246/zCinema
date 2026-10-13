@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.DoubleSupplier;
-import java.util.function.LongSupplier;
 
 import javax.sound.sampled.AudioFormat;
 
@@ -53,13 +52,9 @@ public final class StreamAudio implements AudioStream {
     private final double duration;
     private final DoubleSupplier startSeconds;
 
-    /** Wall-clock time the game has spent paused; the speakers are stopped while it does. */
-    private final LongSupplier pausedMillis;
-
     private final double currentStart;
     private volatile double startTime = Double.NaN;
     private volatile boolean started;
-    private volatile long firstReadAt;
     private final ArrayBlockingQueue<ByteBuffer> decoded =
             new ArrayBlockingQueue<>(MAX_BUFFERED_PCM_CHUNKS);
     private final AtomicInteger bufferedBytes = new AtomicInteger();
@@ -88,11 +83,7 @@ public final class StreamAudio implements AudioStream {
 
     private long lastPositionLogAt;
 
-    public StreamAudio(
-            String url,
-            DoubleSupplier startSeconds,
-            double knownDuration,
-            LongSupplier pausedMillis)
+    public StreamAudio(String url, DoubleSupplier startSeconds, double knownDuration)
             throws IOException {
         long openedAt = System.currentTimeMillis();
         org.bytedeco.javacv.FFmpegFrameGrabber opened = null;
@@ -111,7 +102,6 @@ public final class StreamAudio implements AudioStream {
             // take a moment on a network stream, and seeking to a stale position is exactly what
             // makes the sound walk half a second behind the picture.
             this.startSeconds = startSeconds;
-            this.pausedMillis = pausedMillis;
             double currentSeconds = Math.max(0.0, startSeconds.getAsDouble());
             this.currentStart = duration > 0.0 ? wrap(currentSeconds, duration) : currentSeconds;
             // Seek after start(): JavaCV clears a pending timestamp inside start(), so a seek set
@@ -203,20 +193,24 @@ public final class StreamAudio implements AudioStream {
     }
 
     /**
-     * Wall-clock position of this stream's audible timeline, counted from the first read. The
-     * engine consumes at the playback rate, so wall time tracks the speakers - while the data
-     * written into OpenAL runs up to about one queued buffer ahead of the play cursor and must
-     * not be mistaken for what is audible right now. Silence padded over a data gap is trimmed
-     * off the following content, so it never shifts this timeline either.
+     * Where this sound is on the media timeline right now: the newest frame the decoder produced,
+     * minus what is still waiting in the buffer to be handed over. That is the media position
+     * the engine has been given and is consuming.
      *
-     * <p>Time the game spent paused is subtracted: the sound engine is stopped for it, so that
-     * wall time never reached the speakers.
+     * <p>This lives on the media axis - the same axis the video's displayed frame lives on - so
+     * the two can be subtracted from each other, which a wall-clock estimate never allowed. What
+     * it cannot see is the gap between "handed to the engine" and "out of the speakers" (the
+     * engine's own queue plus the device buffer, typically 20-50ms); that is what
+     * {@code ClientConfig.audioDelayMs} is for.
+     *
+     * <p>It deliberately stops at the last decoded frame when the decoder starves: reporting a
+     * position the speakers are not playing would be a lie, and the underrun is real. The
+     * controller sees the truth and rebuffers.
      */
-    public double playedSeconds() {
-        long base = firstReadAt;
-        if (!started || base == 0L) return Double.NaN;
-        long playedMillis = System.currentTimeMillis() - base - pausedMillis.getAsLong();
-        return startTime + playedMillis / 1000.0;
+    public double consumedMediaSeconds() {
+        double decoded = lastDecodedTimestamp;
+        if (Double.isNaN(decoded)) return Double.NaN;
+        return Math.max(0.0, decoded - bufferedSeconds());
     }
 
     @Override
@@ -225,11 +219,10 @@ public final class StreamAudio implements AudioStream {
         return readPcm(requestedBytes);
     }
 
-    /** Records when the engine actually pulled sound, for the wall-clock position estimate. */
+    /** Records that the engine has started pulling sound, so the position below becomes real. */
     private void prepareFirstRead() {
         if (started) return;
         started = true;
-        firstReadAt = System.currentTimeMillis();
         double engineDelay =
                 forwardDelta(wrap(startSeconds.getAsDouble(), duration), startTime, duration);
         ZCinemaLog.log(
@@ -299,7 +292,7 @@ public final class StreamAudio implements AudioStream {
      * Diagnostics: remembers the newest frame timestamp and logs a discontinuity when the demuxer
      * hands over frames that do not continue where the previous one left off. That is the exact
      * signature a silent "the audio jumped somewhere else" leaves behind. The heartbeat line every
-     * few seconds keeps the decoded content position comparable with {@link #playedSeconds()}.
+     * few seconds keeps the decoded content position comparable with {@link #consumedMediaSeconds()}.
      */
     private void traceFrame(org.bytedeco.javacv.Frame frame) {
         double stamp = frame.timestamp / 1_000_000.0;
@@ -313,7 +306,7 @@ public final class StreamAudio implements AudioStream {
                     ZCinemaLog.fmt(previous),
                     ZCinemaLog.fmt(stamp),
                     stamp - previous,
-                    ZCinemaLog.fmt(playedSeconds()),
+                    ZCinemaLog.fmt(consumedMediaSeconds()),
                     bufferedSeconds());
         }
         long now = System.currentTimeMillis();
@@ -323,7 +316,7 @@ public final class StreamAudio implements AudioStream {
                     "audio",
                     "decoded pos ts=%s played=%s buffered=%.3fs",
                     ZCinemaLog.fmt(stamp),
-                    ZCinemaLog.fmt(playedSeconds()),
+                    ZCinemaLog.fmt(consumedMediaSeconds()),
                     bufferedSeconds());
         }
     }
@@ -339,7 +332,7 @@ public final class StreamAudio implements AudioStream {
                 Math.round(healFrames * 1000.0 / framesPerSecond),
                 bufferedSeconds(),
                 ZCinemaLog.fmt(lastDecodedTimestamp),
-                ZCinemaLog.fmt(playedSeconds()));
+                ZCinemaLog.fmt(consumedMediaSeconds()));
     }
 
     private void decodeAudio() {
@@ -449,7 +442,7 @@ public final class StreamAudio implements AudioStream {
                     "stream EOF: lastTs=%s played=%s buffered=%.3fs duration=%.3fs - "
                             + "restarting the decoder at 0",
                     ZCinemaLog.fmt(lastDecodedTimestamp),
-                    ZCinemaLog.fmt(playedSeconds()),
+                    ZCinemaLog.fmt(consumedMediaSeconds()),
                     bufferedSeconds(),
                     duration);
             try {
@@ -554,7 +547,7 @@ public final class StreamAudio implements AudioStream {
                 "audio",
                 "stream close start=%.3fs played=%s buffered=%.3fs",
                 startTime,
-                ZCinemaLog.fmt(playedSeconds()),
+                ZCinemaLog.fmt(consumedMediaSeconds()),
                 bufferedSeconds());
         decoderThread.interrupt();
         decoded.clear();

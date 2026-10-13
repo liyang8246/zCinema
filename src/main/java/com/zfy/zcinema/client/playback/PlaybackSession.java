@@ -131,16 +131,6 @@ public final class PlaybackSession {
     /** True while this client's game is paused (death screen, escape menu, ...). */
     private volatile boolean gamePaused;
 
-    /**
-     * Wall-clock time spent paused. The audio position is estimated from the wall clock, but a
-     * paused game stops the speakers (SoundEngine.pauseAllExcept) while the wall clock keeps
-     * going - so the estimate has to subtract every pause, or it claims the sound played through
-     * them. That is the "a whole pause behind, with nothing to notice it" this avoids.
-     */
-    private volatile long pausedMillis;
-
-    private long pauseStartedAt;
-
     /** True from issuing a reposition until its frames landed (or gave up). */
     private volatile boolean resyncing;
 
@@ -185,8 +175,8 @@ public final class PlaybackSession {
     /**
      * The shared clock, straight from the last server snapshot. It keeps running while the game is
      * paused: the server never stops and the decoders keep filling their queues, so the media
-     * position stays meaningful. Only the audio's idea of "how long the speakers have actually
-     * been playing" has to exclude the pause - see {@link #pausedMillis()}.
+     * position stays meaningful. The audio no longer estimates anything from the wall clock, so
+     * a pause cannot distort its position either.
      */
     private double targetSeconds() {
         return be.clientPositionSeconds();
@@ -316,21 +306,6 @@ public final class PlaybackSession {
     /** True while the game is paused: the sound engine is stopped, so the clock must not run. */
     public boolean audioPaused() {
         return gamePaused;
-    }
-
-    /** Wall-clock milliseconds spent paused so far, for the audio position estimate. */
-    public long pausedMillis() {
-        return pausedMillis;
-    }
-
-    private void trackPause() {
-        long now = System.currentTimeMillis();
-        if (gamePaused) {
-            if (pauseStartedAt == 0L) pauseStartedAt = now;
-        } else if (pauseStartedAt != 0L) {
-            pausedMillis += now - pauseStartedAt;
-            pauseStartedAt = 0L;
-        }
     }
 
     // =============================== lifecycle ===============================
@@ -957,7 +932,6 @@ public final class PlaybackSession {
         }
 
         gamePaused = Minecraft.getInstance().isPaused();
-        trackPause();
 
         double media = mediaSeconds();
         clockMoving = !be.clientFrozen() && !gamePaused && media != previousMediaSeconds;

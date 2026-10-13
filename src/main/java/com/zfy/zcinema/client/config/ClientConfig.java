@@ -24,15 +24,17 @@ public final class ClientConfig {
     public static double hardResyncSeconds = 3.0;
 
     /**
-     * The sound is played this many milliseconds behind the displayed picture, to compensate the
-     * display pipeline (a rendered frame reaches the eyes later than the sound reaches the ears).
-     * Reported "audio is ~100ms ahead" is the usual symptom when this is too low.
+     * The sound is played this many milliseconds behind the displayed picture.
      *
-     * <p>Calibrate it, do not guess it: watch a clip with a sharp sound (a clap, a click) and raise
-     * this by 20ms at a time until the sound lands on the picture. The exact value is machine
-     * specific, because what it compensates is your monitor plus your audio device - which is also
-     * why the default is 0 rather than a guess. Reading the real playback head out of OpenAL would
-     * make this automatic, but that needs a mixin into SoundEngine's internals.
+     * <p>The audio position is now measured on the media timeline (what the engine has been
+     * given), so it is directly comparable with the displayed frame and needs no guessing. What
+     * is left to compensate is only the part nobody in Java can see: the engine's own queue plus
+     * your audio device's buffer, typically 20-50ms. That is a stable hardware constant, so this
+     * is a one-time calibration rather than a moving target.
+     *
+     * <p>Calibrate with a clip that has a sharp sound (a clap, a click) and raise this by 20ms at
+     * a time until the sound lands on the picture. If the sound leads the picture, raise it; if it
+     * lags, lower it. 0 is the honest default: no compensation until you have measured yours.
      */
     public static int audioDelayMs = 0;
 
