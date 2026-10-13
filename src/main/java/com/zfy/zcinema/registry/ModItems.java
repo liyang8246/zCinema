@@ -32,11 +32,38 @@ public final class ModItems {
      * smiling_face_with_tear, smirk, cry, weary, star_struck, rage, yum, clap, fire, hundred.
      */
     private static final String[] NAMES = {
-            "joy", "heart", "rofl", "thumbsup", "sob", "pray", "kissing_heart",
-            "smiling_face_with_3_hearts", "heart_eyes", "blush", "tada", "grin", "two_hearts",
-            "pleading_face", "sweat_smile", "thinking", "hugs", "wink", "roll_eyes", "sunglasses",
-            "sparkles", "skull", "smiling_face_with_tear", "smirk", "cry", "weary", "star_struck",
-            "rage", "yum", "clap", "fire", "hundred",
+        "joy",
+        "heart",
+        "rofl",
+        "thumbsup",
+        "sob",
+        "pray",
+        "kissing_heart",
+        "smiling_face_with_3_hearts",
+        "heart_eyes",
+        "blush",
+        "tada",
+        "grin",
+        "two_hearts",
+        "pleading_face",
+        "sweat_smile",
+        "thinking",
+        "hugs",
+        "wink",
+        "roll_eyes",
+        "sunglasses",
+        "sparkles",
+        "skull",
+        "smiling_face_with_tear",
+        "smirk",
+        "cry",
+        "weary",
+        "star_struck",
+        "rage",
+        "yum",
+        "clap",
+        "fire",
+        "hundred",
     };
 
     public static final List<Item> EMOJIS = new ArrayList<>();
@@ -55,10 +82,13 @@ public final class ModItems {
             EMOJIS.add(item);
         }
 
-        Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, EMOJI_TAB, FabricItemGroup.builder()
-                .title(Component.translatable("itemGroup.zcinema.emoji"))
-                .icon(() -> new ItemStack(EMOJIS.get(0)))
-                .displayItems((parameters, output) -> EMOJIS.forEach(output::accept))
-                .build());
+        Registry.register(
+                BuiltInRegistries.CREATIVE_MODE_TAB,
+                EMOJI_TAB,
+                FabricItemGroup.builder()
+                        .title(Component.translatable("itemGroup.zcinema.emoji"))
+                        .icon(() -> new ItemStack(EMOJIS.get(0)))
+                        .displayItems((parameters, output) -> EMOJIS.forEach(output::accept))
+                        .build());
     }
 }

@@ -16,6 +16,7 @@ import net.minecraft.client.player.LocalPlayer;
 public final class HudHider {
     /** How long the camera has to stay still before the HUD disappears. */
     private static final long IDLE_MILLIS = 2_000L;
+
     /** How much the view has to move to count as movement, in degrees. */
     private static final float MOVEMENT_EPSILON = 0.01F;
 
@@ -23,8 +24,10 @@ public final class HudHider {
     private static float lastPitch = Float.NaN;
     private static long stillSince;
     private static boolean idle;
+
     /** True while the hidden HUD is ours to undo. */
     private static boolean hiding;
+
     /** What the player's own HUD switch was worth before we flipped it. */
     private static boolean playerHudState;
 

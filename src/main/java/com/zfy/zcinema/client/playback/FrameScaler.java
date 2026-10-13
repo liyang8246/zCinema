@@ -39,12 +39,24 @@ final class FrameScaler implements AutoCloseable {
         int rawWidth = raw.width();
         int rawHeight = raw.height();
         if (rawWidth <= 0 || rawHeight <= 0) return null;
-        double factor = Math.min(1.0, Math.min(maxWidth / (double) rawWidth, maxHeight / (double) rawHeight));
+        double factor =
+                Math.min(
+                        1.0,
+                        Math.min(maxWidth / (double) rawWidth, maxHeight / (double) rawHeight));
         int targetWidth = Math.max(1, (int) Math.round(rawWidth * factor));
         int targetHeight = Math.max(1, (int) Math.round(rawHeight * factor));
         ensure(rawWidth, rawHeight, raw.format(), targetWidth, targetHeight);
-        int rows = swscale.sws_scale(context, raw.data(), raw.linesize(), 0, rawHeight, outputPlanes, outputStrides);
-        if (rows != targetHeight) throw new IOException("FFmpeg scaled " + rows + " of " + targetHeight + " rows");
+        int rows =
+                swscale.sws_scale(
+                        context,
+                        raw.data(),
+                        raw.linesize(),
+                        0,
+                        rawHeight,
+                        outputPlanes,
+                        outputStrides);
+        if (rows != targetHeight)
+            throw new IOException("FFmpeg scaled " + rows + " of " + targetHeight + " rows");
 
         NativeImage image = new NativeImage(targetWidth, targetHeight, false);
         try {
@@ -53,8 +65,12 @@ final class FrameScaler implements AutoCloseable {
             if (NATIVE_IMAGE_PIXELS != null) {
                 MemoryUtil.memCopy(output.address(), NATIVE_IMAGE_PIXELS.getLong(image), byteCount);
             } else {
-                java.nio.IntBuffer pixels = output.position(0).capacity(byteCount)
-                        .asByteBuffer().order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
+                java.nio.IntBuffer pixels =
+                        output.position(0)
+                                .capacity(byteCount)
+                                .asByteBuffer()
+                                .order(java.nio.ByteOrder.nativeOrder())
+                                .asIntBuffer();
                 for (int y = 0; y < targetHeight; y++) {
                     for (int x = 0; x < targetWidth; x++) image.setPixelRGBA(x, y, pixels.get());
                 }
@@ -76,15 +92,37 @@ final class FrameScaler implements AutoCloseable {
         }
     }
 
-    private void ensure(int rawWidth, int rawHeight, int rawFormat, int targetWidth, int targetHeight) throws IOException {
-        if (context != null && sourceWidth == rawWidth && sourceHeight == rawHeight && sourceFormat == rawFormat
-                && width == targetWidth && height == targetHeight) return;
+    private void ensure(
+            int rawWidth, int rawHeight, int rawFormat, int targetWidth, int targetHeight)
+            throws IOException {
+        if (context != null
+                && sourceWidth == rawWidth
+                && sourceHeight == rawHeight
+                && sourceFormat == rawFormat
+                && width == targetWidth
+                && height == targetHeight) return;
         close();
-        ZCinema.LOGGER.info("Video scaler {}x{} {} -> {}x{}", rawWidth, rawHeight, pixFmtName(rawFormat),
-                targetWidth, targetHeight);
-        context = swscale.sws_getContext(rawWidth, rawHeight, rawFormat, targetWidth, targetHeight,
-                avutil.AV_PIX_FMT_RGBA, swscale.SWS_BILINEAR, null, null, (double[]) null);
-        if (context == null || context.isNull()) throw new IOException("FFmpeg could not create a video scaler");
+        ZCinema.LOGGER.info(
+                "Video scaler {}x{} {} -> {}x{}",
+                rawWidth,
+                rawHeight,
+                pixFmtName(rawFormat),
+                targetWidth,
+                targetHeight);
+        context =
+                swscale.sws_getContext(
+                        rawWidth,
+                        rawHeight,
+                        rawFormat,
+                        targetWidth,
+                        targetHeight,
+                        avutil.AV_PIX_FMT_RGBA,
+                        swscale.SWS_BILINEAR,
+                        null,
+                        null,
+                        (double[]) null);
+        if (context == null || context.isNull())
+            throw new IOException("FFmpeg could not create a video scaler");
         output = new BytePointer((long) targetWidth * targetHeight * 4L);
         // Belt and braces: every frame is RGBA with alpha 255, and pre-filling the buffer means a
         // scaler that leaves the alpha byte alone can never turn the screen translucent.

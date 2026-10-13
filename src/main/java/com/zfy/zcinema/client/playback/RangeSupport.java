@@ -19,51 +19,63 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class RangeSupport {
     private static final Map<String, Boolean> CACHE = new ConcurrentHashMap<>();
-    private static final HttpClient HTTP = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(java.time.Duration.ofSeconds(10))
-            .build();
+    private static final HttpClient HTTP =
+            HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
 
     private RangeSupport() {}
 
     static boolean supports(String key, String probeUrl) {
-        return CACHE.computeIfAbsent(key, cacheKey -> {
-            long started = System.currentTimeMillis();
-            boolean supported = probe(probeUrl);
-            ZCinemaLog.log("range", "probe %s -> %s in %dms", ZCinemaLog.shorten(probeUrl, 200),
-                    supported ? "supported" : "UNSUPPORTED", System.currentTimeMillis() - started);
-            if (!supported) warnOnce(cacheKey);
-            return supported;
-        });
-    }
-
-    static void forget(String url) {
-        CACHE.remove(url);
+        return CACHE.computeIfAbsent(
+                key,
+                cacheKey -> {
+                    long started = System.currentTimeMillis();
+                    boolean supported = probe(probeUrl);
+                    ZCinemaLog.log(
+                            "range",
+                            "probe %s -> %s in %dms",
+                            ZCinemaLog.shorten(probeUrl, 200),
+                            supported ? "supported" : "UNSUPPORTED",
+                            System.currentTimeMillis() - started);
+                    if (!supported) warnOnce(cacheKey);
+                    return supported;
+                });
     }
 
     private static boolean probe(String url) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(java.time.Duration.ofSeconds(10))
-                    // Ask with the same identity the decoders will use: a CDN that rejects
-                    // FFmpeg's default user agent would otherwise look like a no-Range server.
-                    .header("User-Agent", SourceResolver.USER_AGENT)
-                    .header("Referer", SourceResolver.refererFor(url))
-                    .header("Range", "bytes=0-0")
-                    .GET()
-                    .build();
-            HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpRequest request =
+                    HttpRequest.newBuilder(URI.create(url))
+                            .timeout(java.time.Duration.ofSeconds(10))
+                            // Ask with the same identity the decoders will use: a CDN that rejects
+                            // FFmpeg's default user agent would otherwise look like a no-Range
+                            // server.
+                            .header("User-Agent", SourceResolver.USER_AGENT)
+                            .header("Referer", SourceResolver.refererFor(url))
+                            .header("Range", "bytes=0-0")
+                            .GET()
+                            .build();
+            HttpResponse<InputStream> response =
+                    HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
             try (InputStream ignored = response.body()) {
                 int status = response.statusCode();
                 if (status != 206) {
-                    ZCinemaLog.log("range", "probe answered HTTP %d for %s", status,
+                    ZCinemaLog.log(
+                            "range",
+                            "probe answered HTTP %d for %s",
+                            status,
                             ZCinemaLog.shorten(url, 200));
                 }
                 // 206 Partial Content means the source really honours Range requests.
                 return status == 206;
             }
         } catch (Exception error) {
-            ZCinemaLog.log("range", "probe FAILED for %s: %s", ZCinemaLog.shorten(url, 200),
+            ZCinemaLog.log(
+                    "range",
+                    "probe FAILED for %s: %s",
+                    ZCinemaLog.shorten(url, 200),
                     error.getMessage());
             return false;
         }
@@ -71,9 +83,11 @@ final class RangeSupport {
 
     /** Warns once, the first time a source turns out to have no Range support. */
     static void warnOnce(String url) {
-        ZCinema.LOGGER.warn("Source {} does not support HTTP Range requests: rewinding re-decodes from "
-                + "the start, which can take seconds. Serve the file with nginx, caddy, "
-                + "`npx http-server -c-1` or `python -m RangeHTTPServer 8000` to make seeking "
-                + "instant.", url);
+        ZCinema.LOGGER.warn(
+                "Source {} does not support HTTP Range requests: rewinding re-decodes from "
+                        + "the start, which can take seconds. Serve the file with nginx, caddy, "
+                        + "`npx http-server -c-1` or `python -m RangeHTTPServer 8000` to make seeking "
+                        + "instant.",
+                url);
     }
 }

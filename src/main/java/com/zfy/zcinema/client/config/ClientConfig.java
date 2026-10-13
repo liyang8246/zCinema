@@ -13,12 +13,16 @@ public final class ClientConfig {
 
     /** Frames wider than this are downscaled while decoding (saves bandwidth/CPU). */
     public static int maxFrameWidth = 1920;
+
     /** Frames taller than this are downscaled while decoding. */
     public static int maxFrameHeight = 1080;
+
     /** How far ahead of the shared clock this client decodes. */
     public static double bufferSeconds = 1.5;
+
     /** If the shared clock and local playback diverge by more than this, the stream seeks. */
     public static double hardResyncSeconds = 3.0;
+
     /**
      * The sound is played this many milliseconds behind the displayed picture, to compensate the
      * display pipeline (a rendered frame reaches the eyes later than the sound reaches the ears).
@@ -33,7 +37,8 @@ public final class ClientConfig {
         maxFrameWidth = JsonConfig.getInt(root, "maxFrameWidth", maxFrameWidth, 320, 7680);
         maxFrameHeight = JsonConfig.getInt(root, "maxFrameHeight", maxFrameHeight, 240, 4320);
         bufferSeconds = JsonConfig.getDouble(root, "bufferSeconds", bufferSeconds, 0.25, 8.0);
-        hardResyncSeconds = JsonConfig.getDouble(root, "hardResyncSeconds", hardResyncSeconds, 0.5, 30.0);
+        hardResyncSeconds =
+                JsonConfig.getDouble(root, "hardResyncSeconds", hardResyncSeconds, 0.5, 30.0);
         audioDelayMs = JsonConfig.getInt(root, "audioDelayMs", audioDelayMs, 0, 500);
 
         JsonObject out = root.deepCopy();
@@ -43,9 +48,15 @@ public final class ClientConfig {
         out.addProperty("hardResyncSeconds", hardResyncSeconds);
         out.addProperty("audioDelayMs", audioDelayMs);
         JsonConfig.write(FILE_NAME, out);
-        ZCinemaLog.log("config", "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs "
+        ZCinemaLog.log(
+                "config",
+                "client loaded: maxFrame=%dx%d buffer=%.2fs hardResync=%.2fs "
                         + "audioDelay=%dms (config/%s)",
-                maxFrameWidth, maxFrameHeight, bufferSeconds, hardResyncSeconds, audioDelayMs,
+                maxFrameWidth,
+                maxFrameHeight,
+                bufferSeconds,
+                hardResyncSeconds,
+                audioDelayMs,
                 FILE_NAME);
     }
 }

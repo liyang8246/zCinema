@@ -18,7 +18,6 @@ import java.util.Map;
  */
 public final class ScreenAudio {
     private static final Map<BlockPos, CinemaSoundInstance> INSTANCES = new HashMap<>();
-    private static final Map<BlockPos, Long> RETRY_AT = new HashMap<>();
     private static final Map<BlockPos, Long> LAST_RESTART = new HashMap<>();
     private static final Map<BlockPos, Integer> FAILURES = new HashMap<>();
 
@@ -56,12 +55,15 @@ public final class ScreenAudio {
         if (!session.audioReady()) {
             if (current != null) {
                 String blocker = session.audioReadyBlocker();
-                ZCinemaLog.log("audio", "stopping screen=%s: not ready (%s)", pos.toShortString(), blocker);
+                ZCinemaLog.log(
+                        "audio",
+                        "stopping screen=%s: not ready (%s)",
+                        pos.toShortString(),
+                        blocker);
                 current.stopInstance("audio not ready: " + blocker);
                 minecraft.getSoundManager().stop(current);
                 INSTANCES.remove(pos);
             }
-            RETRY_AT.remove(pos);
             LAST_RESTART.remove(pos);
             FAILURES.remove(pos);
             return;
@@ -70,15 +72,19 @@ public final class ScreenAudio {
         long now = System.currentTimeMillis();
         if (current != null) {
             double position = current.audioPositionSeconds();
-            boolean drifted = position > 0.0
-                    && Math.abs(position - masterSeconds) > current.driftRestartSeconds();
+            boolean drifted =
+                    position > 0.0
+                            && Math.abs(position - masterSeconds) > current.driftRestartSeconds();
             boolean broken = current.driftRestart() || current.openFailed() || current.unstarted();
             if (drifted || broken) {
                 // Only reopen while the shared clock has moved since this sound last saw it:
                 // otherwise a paused or stuck timeline would spin here forever.
                 if (!session.advancedSince(current.latestPlayTime())) {
-                    ZCinemaLog.log("audio", "reopen deferred screen=%s: clock has not moved since %.3fs",
-                            pos.toShortString(), current.latestPlayTime());
+                    ZCinemaLog.log(
+                            "audio",
+                            "reopen deferred screen=%s: clock has not moved since %.3fs",
+                            pos.toShortString(),
+                            current.latestPlayTime());
                     return;
                 }
                 // Every reopen - drift or failure alike - is rate limited, and repeated failures
@@ -87,24 +93,42 @@ public final class ScreenAudio {
                 long cooldown = cooldown(failures);
                 long sinceRestart = now - LAST_RESTART.getOrDefault(pos, 0L);
                 if (sinceRestart < cooldown) {
-                    ZCinemaLog.log("audio", "reopen throttled screen=%s: %dms of %dms cooldown, "
-                                    + "failures=%d", pos.toShortString(), sinceRestart, cooldown, failures);
+                    ZCinemaLog.log(
+                            "audio",
+                            "reopen throttled screen=%s: %dms of %dms cooldown, " + "failures=%d",
+                            pos.toShortString(),
+                            sinceRestart,
+                            cooldown,
+                            failures);
                     return;
                 }
                 LAST_RESTART.put(pos, now);
                 FAILURES.put(pos, Math.min(failures + 1, 3));
                 String reason = drifted ? "drifted" : "broken";
-                ZCinemaLog.log("audio", "reopen screen=%s reason=%s position=%.3fs master=%.3fs "
+                ZCinemaLog.log(
+                        "audio",
+                        "reopen screen=%s reason=%s position=%.3fs master=%.3fs "
                                 + "drift=%+.3fs unstarted=%s openFailed=%s driftRestart=%s failures=%d",
-                        pos.toShortString(), reason, position, masterSeconds, position - masterSeconds,
-                        current.unstarted(), current.openFailed(), current.driftRestart(), failures + 1);
+                        pos.toShortString(),
+                        reason,
+                        position,
+                        masterSeconds,
+                        position - masterSeconds,
+                        current.unstarted(),
+                        current.openFailed(),
+                        current.driftRestart(),
+                        failures + 1);
                 if (drifted) {
-                    ZCinema.LOGGER.debug("Screen {} audio drifted to {}s while the clock is at {}s, "
-                            + "reopening", pos,
-                            String.format(java.util.Locale.ROOT, "%.3f", position),
-                            String.format(java.util.Locale.ROOT, "%.3f", masterSeconds));
+                    ZCinema.LOGGER.debug(
+                            "Screen {} audio drifted to {}s while the clock is at {}s, "
+                                    + "reopening",
+                            pos,
+                            ZCinemaLog.fmt(position),
+                            ZCinemaLog.fmt(masterSeconds));
                 } else {
-                    ZCinema.LOGGER.warn("Screen {} audio needs a reopen (attempt {}), backing off", pos,
+                    ZCinema.LOGGER.warn(
+                            "Screen {} audio needs a reopen (attempt {}), backing off",
+                            pos,
                             failures + 1);
                 }
                 current.stopInstance("reopen: " + reason);
@@ -114,18 +138,19 @@ public final class ScreenAudio {
             } else if (Math.abs(position - masterSeconds) < 0.5) {
                 // Healthy again: forget past failures so the next hiccup recovers quickly.
                 FAILURES.remove(pos);
-                RETRY_AT.remove(pos);
             }
         }
 
         if (current == null) {
-            Long retryAt = RETRY_AT.get(pos);
-            if (retryAt != null && now < retryAt) return;
             CinemaSoundInstance instance = new CinemaSoundInstance(session);
             INSTANCES.put(pos, instance);
-            RETRY_AT.remove(pos);
-            ZCinemaLog.log("audio", "start screen=%s at=%.3fs master=%.3fs active=%d", pos.toShortString(),
-                    session.mediaSeconds(), masterSeconds, INSTANCES.size());
+            ZCinemaLog.log(
+                    "audio",
+                    "start screen=%s at=%.3fs master=%.3fs active=%d",
+                    pos.toShortString(),
+                    session.mediaSeconds(),
+                    masterSeconds,
+                    INSTANCES.size());
             minecraft.getSoundManager().play(instance);
         }
     }
@@ -140,29 +165,30 @@ public final class ScreenAudio {
         if (!INSTANCES.isEmpty()) {
             ZCinemaLog.log("audio", "clear: %d sounds", INSTANCES.size());
         }
-        INSTANCES.values().forEach(instance -> {
-            instance.stopInstance("screen audio cleared");
-            minecraft.getSoundManager().stop(instance);
-        });
+        INSTANCES
+                .values()
+                .forEach(
+                        instance -> {
+                            instance.stopInstance("screen audio cleared");
+                            minecraft.getSoundManager().stop(instance);
+                        });
         INSTANCES.clear();
-        RETRY_AT.clear();
         LAST_RESTART.clear();
         FAILURES.clear();
     }
 
     /** Silences one screen immediately (used when the screen itself goes away). */
-    public static void stop(BlockPos pos) {
-        stop(pos, "unspecified");
-    }
-
     public static void stop(BlockPos pos, String reason) {
         CinemaSoundInstance instance = INSTANCES.remove(pos);
         if (instance == null) return;
-        ZCinemaLog.log("audio", "stop screen=%s reason=%s active=%d", pos.toShortString(), reason,
+        ZCinemaLog.log(
+                "audio",
+                "stop screen=%s reason=%s active=%d",
+                pos.toShortString(),
+                reason,
                 INSTANCES.size());
         instance.stopInstance(reason);
         Minecraft.getInstance().getSoundManager().stop(instance);
-        RETRY_AT.remove(pos);
         LAST_RESTART.remove(pos);
         FAILURES.remove(pos);
     }

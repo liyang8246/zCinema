@@ -11,6 +11,7 @@ public final class CommonConfig {
 
     /** How often (in ticks) the server broadcasts the full playback state to viewers. */
     public static int syncIntervalTicks = 20;
+
     /** When viewers agree the source is unreachable, pause the shared clock for everyone. */
     public static boolean globalStallPause = true;
 
@@ -25,7 +26,11 @@ public final class CommonConfig {
         out.addProperty("syncIntervalTicks", syncIntervalTicks);
         out.addProperty("globalStallPause", globalStallPause);
         JsonConfig.write(FILE_NAME, out);
-        ZCinemaLog.log("config", "common loaded: syncIntervalTicks=%d globalStallPause=%s (config/%s)",
-                syncIntervalTicks, globalStallPause, FILE_NAME);
+        ZCinemaLog.log(
+                "config",
+                "common loaded: syncIntervalTicks=%d globalStallPause=%s (config/%s)",
+                syncIntervalTicks,
+                globalStallPause,
+                FILE_NAME);
     }
 }

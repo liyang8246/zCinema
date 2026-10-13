@@ -11,14 +11,6 @@ import net.minecraft.world.item.ItemStack;
 public class CinemaScreenMenu extends AbstractContainerMenu {
     private final BlockPos pos;
 
-    public static CinemaScreenMenu server(int id, Inventory inventory, BlockPos pos) {
-        return new CinemaScreenMenu(id, inventory, pos);
-    }
-
-    public static CinemaScreenMenu client(int id, Inventory inventory, BlockPos pos) {
-        return new CinemaScreenMenu(id, inventory, pos);
-    }
-
     public CinemaScreenMenu(int id, Inventory inventory, BlockPos pos) {
         super(ModMenus.SCREEN, id);
         this.pos = pos;
@@ -35,7 +27,8 @@ public class CinemaScreenMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return player.level().getBlockEntity(pos) instanceof com.zfy.zcinema.blockentity.CinemaScreenBlockEntity be
+        return player.level().getBlockEntity(pos)
+                        instanceof com.zfy.zcinema.blockentity.CinemaScreenBlockEntity be
                 && be.canControl(player);
     }
 }

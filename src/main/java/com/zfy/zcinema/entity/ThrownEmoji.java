@@ -21,14 +21,17 @@ import net.minecraft.world.phys.Vec3;
 public class ThrownEmoji extends ThrowableItemProjectile {
     /** Five times the 1.5 blocks per tick an egg leaves the hand with. */
     public static final float SPEED = 7.5F;
+
     /** How far a throw can stray from where it was aimed, in the same units an egg uses 1. Five
      *  times an egg's spread: a spray of emoji rather than a laser. */
     public static final float INACCURACY = 5.0F;
+
     /**
      * What the emoji is drawn at in flight: two blocks across and two blocks tall. The entity box
      * matches it because Minecraft scales an entity's render distance by 64 times that size.
      */
     public static final float SIZE = 2.0F;
+
     /** At this speed it sails past the view distance in seconds; never keep one forever. */
     private static final int MAX_LIFETIME_TICKS = 60;
 
@@ -89,6 +92,13 @@ public class ThrownEmoji extends ThrowableItemProjectile {
         BlockPos anchor = hit.getBlockPos().relative(hit.getDirection(), 2);
         Vec3 center = new Vec3(anchor.getX() + 0.5, anchor.getY() + 0.5, anchor.getZ() + 0.5);
         this.level().addFreshEntity(new EmojiSplat(this.level(), center, this.getItem()));
-        this.level().playSound(null, anchor, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.NEUTRAL, 0.8F, 1.4F);
+        this.level()
+                .playSound(
+                        null,
+                        anchor,
+                        SoundEvents.SLIME_BLOCK_BREAK,
+                        SoundSource.NEUTRAL,
+                        0.8F,
+                        1.4F);
     }
 }

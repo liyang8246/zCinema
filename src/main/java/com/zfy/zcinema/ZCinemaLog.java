@@ -39,12 +39,20 @@ public final class ZCinemaLog {
     /** One line per launch: identifies which machine and which side a file came from. */
     public static void header() {
         side = FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT ? "C" : "S";
-        String version = FabricLoader.getInstance().getModContainer(ZCinema.MODID)
-                .map(container -> container.getMetadata().getVersion().getFriendlyString())
-                .orElse("dev");
-        log("lifecycle", "=== Z Cinema %s | side=%s | %s %s | java %s | gameDir=%s ===",
-                version, side, System.getProperty("os.name"), System.getProperty("os.version"),
-                System.getProperty("java.version"), FabricLoader.getInstance().getGameDir());
+        String version =
+                FabricLoader.getInstance()
+                        .getModContainer(ZCinema.MODID)
+                        .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                        .orElse("dev");
+        log(
+                "lifecycle",
+                "=== Z Cinema %s | side=%s | %s %s | java %s | gameDir=%s ===",
+                version,
+                side,
+                System.getProperty("os.name"),
+                System.getProperty("os.version"),
+                System.getProperty("java.version"),
+                FabricLoader.getInstance().getGameDir());
     }
 
     public static void log(String category, String format, Object... args) {
@@ -84,13 +92,32 @@ public final class ZCinemaLog {
         return value.length() <= max ? value : value.substring(0, max) + "...";
     }
 
+    /** Seconds with three decimals, locale-independent; NaN reads as "n/a". */
+    public static String fmt(double seconds) {
+        return Double.isNaN(seconds) ? "n/a" : String.format(Locale.ROOT, "%.3f", seconds);
+    }
+
+    /** Signed variant, so a drift reads as "-0.031" instead of hiding its sign. */
+    public static String fmtSigned(double seconds) {
+        return Double.isNaN(seconds) ? "n/a" : String.format(Locale.ROOT, "%+.3f", seconds);
+    }
+
+    /** Closes without throwing, for cleanup paths that must not mask the real error. */
+    public static void closeQuietly(AutoCloseable closeable) {
+        if (closeable == null) return;
+        ZCinemaLog.closeQuietly(closeable);
+    }
+
     /** Wrapped exceptions would otherwise hide the real reason in a one-line log. */
     public static String cause(Throwable error) {
         StringBuilder builder = new StringBuilder();
-        for (Throwable current = error; current != null && builder.length() < 400;
-             current = current.getCause()) {
+        for (Throwable current = error;
+                current != null && builder.length() < 400;
+                current = current.getCause()) {
             if (builder.length() > 0) builder.append(" <- ");
-            builder.append(current.getClass().getSimpleName()).append(": ").append(current.getMessage());
+            builder.append(current.getClass().getSimpleName())
+                    .append(": ")
+                    .append(current.getMessage());
         }
         return builder.toString();
     }
@@ -103,14 +130,22 @@ public final class ZCinemaLog {
             Files.createDirectories(directory);
             Path file = directory.resolve("zcinema.log");
             if (Files.isRegularFile(file) && Files.size(file) > MAX_BYTES) {
-                Files.move(file, directory.resolve("zcinema.log.1"), StandardCopyOption.REPLACE_EXISTING);
+                Files.move(
+                        file,
+                        directory.resolve("zcinema.log.1"),
+                        StandardCopyOption.REPLACE_EXISTING);
                 ZCinema.LOGGER.info("Rotated logs/zcinema.log to zcinema.log.1");
             }
-            writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            writer =
+                    Files.newBufferedWriter(
+                            file,
+                            StandardCharsets.UTF_8,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.APPEND);
         } catch (IOException error) {
             unusable = true;
-            ZCinema.LOGGER.warn("Could not open logs/zcinema.log; diagnostics stay in latest.log", error);
+            ZCinema.LOGGER.warn(
+                    "Could not open logs/zcinema.log; diagnostics stay in latest.log", error);
         }
         return writer;
     }

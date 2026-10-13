@@ -63,21 +63,32 @@ public final class ScreenDetector {
         }
         if (found.isEmpty()) return null;
 
-        Direction normal = resolveNormal(level, origin, hitFace, player, minX, maxX, minY, maxY, minZ, maxZ);
+        Direction normal =
+                resolveNormal(level, origin, hitFace, player, minX, maxX, minY, maxY, minZ, maxZ);
         if (normal == null) return null;
-        return new ScreenArea(new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ), normal);
+        return new ScreenArea(
+                new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ), normal);
     }
 
     /**
      * A screen has to be flat: all blocks must share one coordinate, which picks the wall plane.
      * The normal points at the side the player is standing on (which is the face they clicked).
      */
-    private static Direction resolveNormal(Level level, BlockPos origin, Direction hitFace, Vec3 player,
-                                           int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
+    private static Direction resolveNormal(
+            Level level,
+            BlockPos origin,
+            Direction hitFace,
+            Vec3 player,
+            int minX,
+            int maxX,
+            int minY,
+            int maxY,
+            int minZ,
+            int maxZ) {
         List<Direction[]> planes = new ArrayList<>();
-        if (minX == maxX) planes.add(new Direction[]{Direction.WEST, Direction.EAST});
-        if (minY == maxY) planes.add(new Direction[]{Direction.DOWN, Direction.UP});
-        if (minZ == maxZ) planes.add(new Direction[]{Direction.NORTH, Direction.SOUTH});
+        if (minX == maxX) planes.add(new Direction[] {Direction.WEST, Direction.EAST});
+        if (minY == maxY) planes.add(new Direction[] {Direction.DOWN, Direction.UP});
+        if (minZ == maxZ) planes.add(new Direction[] {Direction.NORTH, Direction.SOUTH});
         if (planes.isEmpty()) return null;
 
         Vec3 center = new Vec3(origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5);
@@ -93,6 +104,7 @@ public final class ScreenDetector {
                 }
             }
         }
-        return best != null ? best : planes.get(0)[0];
+        // planes is non-empty and every side is visited, so best is always set.
+        return best;
     }
 }

@@ -6,14 +6,13 @@ import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity;
 import com.zfy.zcinema.blockentity.CinemaScreenBlockEntity.PlaybackHealth;
 import com.zfy.zcinema.client.audio.ScreenAudio;
 import com.zfy.zcinema.client.config.ClientConfig;
-import com.zfy.zcinema.net.packets.C2SControlPacket;
+import com.zfy.zcinema.net.ModNetworking;
 import com.zfy.zcinema.net.packets.C2SHealthPacket;
 import com.zfy.zcinema.net.packets.C2SReportMediaPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import com.zfy.zcinema.net.ModNetworking;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
@@ -68,8 +67,10 @@ public final class PlaybackSession {
     private final AtomicLong touchStamp = new AtomicLong();
 
     private final String url;
+
     /** The direct stream the decoders actually open; resolved from {@link #url} when needed. */
     private volatile String streamUrl;
+
     private final ArrayDeque<DecodedFrame> queue = new ArrayDeque<>();
     private final AtomicInteger generation = new AtomicInteger();
     private volatile boolean closed;
@@ -86,8 +87,10 @@ public final class PlaybackSession {
     private long lastStateLogAt;
     private long seekAppliedAt;
     private double seekLandedTarget = Double.NaN;
+
     /** Decode throughput counters, so a slow machine can be told apart from a stalled one. */
     private final AtomicInteger decodedFrames = new AtomicInteger();
+
     private final AtomicInteger droppedFrames = new AtomicInteger();
     private int lastDecodedFrames;
     private int lastDroppedFrames;
@@ -101,17 +104,19 @@ public final class PlaybackSession {
     // Buffer lifecycle, so "buffering" means "really waiting for frames" and nothing else.
     private volatile boolean bufferReady;
     private volatile boolean rebuffering;
-    private volatile float progress = 0.03F;
     private volatile long lastFrameUploadedAt = System.currentTimeMillis();
     private volatile double displayedTs = Double.NaN;
 
     // Media position, tracked every tick so the audio controller can notice a frozen clock.
     private volatile double previousMediaSeconds = Double.NaN;
     private volatile boolean clockMoving;
+
     /** Timestamp of the newest frame our decoder produced (used to decide how to seek). */
     private volatile double lastDecodedTs = Double.NaN;
+
     /** Raw demuxer timestamp of the previous video frame, to expose discontinuities in the log. */
     private double previousRawTimestamp = Double.NaN;
+
     /**
      * Whether the resolved stream honours HTTP Range. The decoder thread finds out while opening
      * the stream (probing the resolved link, not the parsing API that stands in front of it);
@@ -121,15 +126,20 @@ public final class PlaybackSession {
 
     private volatile double pendingSeek = Double.NaN;
     private long lastSeekAt;
+
     /** When the decoded position first diverged from the shared clock by a real amount. */
     private long divergenceSince;
+
     /** True from issuing a reposition until its frames landed (or gave up). */
     private volatile boolean resyncing;
+
     private long resyncSince;
     private long lastHealthReportAt;
     private long lastMediaReportAt;
+
     /** Early-EOF recovery: how often we may reposition, and how long we keep trying. */
     private long lastRecoveryAt;
+
     private int recoveries;
 
     private DynamicTexture texture;
@@ -142,7 +152,11 @@ public final class PlaybackSession {
         this.pos = be.getBlockPos();
         this.url = be.clientUrl();
         this.itemStartSeconds = 0.0;
-        ZCinemaLog.log("session", "opened screen=%s start=%.3fs url=%s", pos.toShortString(), startSeconds,
+        ZCinemaLog.log(
+                "session",
+                "opened screen=%s start=%.3fs url=%s",
+                pos.toShortString(),
+                startSeconds,
                 ZCinemaLog.shorten(url, 300));
         openDecoder(startSeconds);
     }
@@ -165,10 +179,6 @@ public final class PlaybackSession {
     /** Where our own media timeline currently is; this is what video and audio follow. */
     public double mediaSeconds() {
         return Math.max(0.0, targetSeconds() - itemStartSeconds);
-    }
-
-    private double hardResyncSeconds() {
-        return ClientConfig.hardResyncSeconds;
     }
 
     public boolean matchesUrl(String other) {
@@ -205,12 +215,6 @@ public final class PlaybackSession {
         return duration > 0.0 ? duration : be.clientDurationSeconds();
     }
 
-    public double progress() {
-        double total = durationSeconds();
-        if (total <= 0.0) return 0.0;
-        return Math.max(0.0, Math.min(1.0, mediaSeconds() / total));
-    }
-
     /** True when the source honours HTTP Range, so seeking is instant. */
     public boolean rangeSupported() {
         return rangeOk;
@@ -219,7 +223,8 @@ public final class PlaybackSession {
     /** True while this client is repositioning its stream (a seek, or catching up after one). */
     public boolean seeking() {
         return !Double.isNaN(pendingSeek)
-                || (!bufferReady && System.currentTimeMillis() - lastSeekAt < SEEKING_MESSAGE_MILLIS);
+                || (!bufferReady
+                        && System.currentTimeMillis() - lastSeekAt < SEEKING_MESSAGE_MILLIS);
     }
 
     /** Position of the last frame we actually showed, on our own media timeline. */
@@ -238,8 +243,14 @@ public final class PlaybackSession {
 
     /** True when the sound for this screen may open: enough picture buffered, and not stopped. */
     public boolean audioReady() {
-        return bufferReady && !rebuffering && !failed && !ended && !closed
-                && be.clientPlaying() && !be.clientFrozen() && !be.clientUrl().isBlank();
+        return bufferReady
+                && !rebuffering
+                && !failed
+                && !ended
+                && !closed
+                && be.clientPlaying()
+                && !be.clientFrozen()
+                && !be.clientUrl().isBlank();
     }
 
     /** Why the audio controller may not open right now; used by {@link ScreenAudio}'s diagnostics. */
@@ -262,9 +273,7 @@ public final class PlaybackSession {
         double current = audioReferenceSeconds();
         double distance = Math.abs(current - since);
         double total = durationSeconds();
-        return total > 0.0
-                ? Math.min(distance, total - distance) >= 0.25
-                : distance >= 0.25;
+        return total > 0.0 ? Math.min(distance, total - distance) >= 0.25 : distance >= 0.25;
     }
 
     /**
@@ -284,7 +293,8 @@ public final class PlaybackSession {
 
     private void openDecoder(double startSeconds) {
         int generation = this.generation.incrementAndGet();
-        Thread thread = new Thread(() -> decodeLoop(generation, startSeconds), "ZCinema Decoder " + pos);
+        Thread thread =
+                new Thread(() -> decodeLoop(generation, startSeconds), "ZCinema Decoder " + pos);
         thread.setDaemon(true);
         this.decodeThread = thread;
         thread.start();
@@ -314,15 +324,25 @@ public final class PlaybackSession {
         // Everything the decoder produced sits at the *previous* position, so drop it right now
         // instead of waiting for the decode thread to notice: stale frames must not keep the
         // screen "ready" (which would also keep the old audio instance alive).
-        clearQueue(true);
+        restartBuffering();
         ScreenAudio.stop(pos, "shared clock jumped");
-        ZCinema.LOGGER.info("Screen {} jumped to the shared clock: was {}s, now {}s (delta {}s)",
-                pos, String.format(java.util.Locale.ROOT, "%.3f", local),
-                String.format(java.util.Locale.ROOT, "%.3f", target),
-                String.format(java.util.Locale.ROOT, "%+.3f", diff));
-        ZCinemaLog.log("seek", "hard resync screen=%s from=%.3fs to=%.3fs delta=%+.3fs threadAlive=%s "
-                        + "rangeOk=%s lastDecoded=%.3fs", pos.toShortString(), local, target, diff,
-                decodeThread != null && decodeThread.isAlive(), rangeOk, lastDecodedTs);
+        ZCinema.LOGGER.info(
+                "Screen {} jumped to the shared clock: was {}s, now {}s (delta {}s)",
+                pos,
+                ZCinemaLog.fmt(local),
+                ZCinemaLog.fmt(target),
+                ZCinemaLog.fmtSigned(diff));
+        ZCinemaLog.log(
+                "seek",
+                "hard resync screen=%s from=%.3fs to=%.3fs delta=%+.3fs threadAlive=%s "
+                        + "rangeOk=%s lastDecoded=%.3fs",
+                pos.toShortString(),
+                local,
+                target,
+                diff,
+                decodeThread != null && decodeThread.isAlive(),
+                rangeOk,
+                lastDecodedTs);
         Thread thread = decodeThread;
         if (thread == null || !thread.isAlive()) {
             // The stream is gone (it blew up and was cleared by an earlier failure): reopen it.
@@ -333,9 +353,11 @@ public final class PlaybackSession {
             // A source without Range can only ever move forward, so a rewind needs a fresh
             // connection. Letting the decoder "catch up" would park it forever, because the
             // frame it holds is ahead of the new clock.
-            ZCinema.LOGGER.info("Screen {} rewinds to {}s: reopening the stream because the "
-                    + "source has no Range support", pos,
-                    String.format(java.util.Locale.ROOT, "%.3f", target));
+            ZCinema.LOGGER.info(
+                    "Screen {} rewinds to {}s: reopening the stream because the "
+                            + "source has no Range support",
+                    pos,
+                    ZCinemaLog.fmt(target));
             openDecoder(target);
             return;
         }
@@ -359,18 +381,28 @@ public final class PlaybackSession {
     /** Human drag on the seek slider: move this client's decoder immediately. */
     public void requestSeek(double targetSeconds) {
         if (closed) return;
-        double target = Math.max(0.0, duration > 0.0 ? Math.min(targetSeconds, duration - 0.1) : targetSeconds);
-        boolean needsFreshStream = !rangeOk
-                && (target < lastDecodedTs - 0.5 || ended || failed);
+        double target =
+                Math.max(
+                        0.0,
+                        duration > 0.0 ? Math.min(targetSeconds, duration - 0.1) : targetSeconds);
+        boolean needsFreshStream = !rangeOk && (target < lastDecodedTs - 0.5 || ended || failed);
         lastSeekAt = System.currentTimeMillis();
         resyncing = true;
         resyncSince = System.currentTimeMillis();
-        ZCinemaLog.log("seek", "request screen=%s target=%.3fs from=%.3fs rangeOk=%s ended=%s failed=%s "
-                        + "freshStream=%s", pos.toShortString(), target, mediaSeconds(), rangeOk, ended,
-                failed, needsFreshStream);
+        ZCinemaLog.log(
+                "seek",
+                "request screen=%s target=%.3fs from=%.3fs rangeOk=%s ended=%s failed=%s "
+                        + "freshStream=%s",
+                pos.toShortString(),
+                target,
+                mediaSeconds(),
+                rangeOk,
+                ended,
+                failed,
+                needsFreshStream);
         // The user is moving the timeline: the old picture and sound belong to the old position,
         // so drop both at once instead of letting them play until the decoder thread reacts.
-        clearQueue(true);
+        restartBuffering();
         ScreenAudio.stop(pos, "seek requested");
         if (ended || failed || needsFreshStream) {
             // Its decoder already stopped, or rewinding needs a stream that can only move
@@ -380,9 +412,11 @@ public final class PlaybackSession {
             errorMessage = null;
             recoveries = 0;
             if (needsFreshStream) {
-                ZCinema.LOGGER.info("Screen {} rewinds to {}s: reopening the stream from the start "
-                        + "because the source has no Range support", pos,
-                        String.format(java.util.Locale.ROOT, "%.3f", target));
+                ZCinema.LOGGER.info(
+                        "Screen {} rewinds to {}s: reopening the stream from the start "
+                                + "because the source has no Range support",
+                        pos,
+                        ZCinemaLog.fmt(target));
             }
             openDecoder(needsFreshStream ? 0.0 : target);
             return;
@@ -399,29 +433,44 @@ public final class PlaybackSession {
         closed = true;
         Thread thread = decodeThread;
         if (thread != null) thread.interrupt();
-        clearQueue(false);
+        dropFrames();
         if (textureLocation != null) {
             ResourceLocation location = textureLocation;
-            Minecraft.getInstance().execute(() -> Minecraft.getInstance().getTextureManager().release(location));
+            Minecraft.getInstance()
+                    .execute(() -> Minecraft.getInstance().getTextureManager().release(location));
         }
         texture = null;
         textureLocation = null;
         ScreenAudio.stop(pos, "session closed: " + reason);
-        ZCinemaLog.log("session", "closed screen=%s reason=%s lifetime=%.1fs", pos.toShortString(), reason,
+        ZCinemaLog.log(
+                "session",
+                "closed screen=%s reason=%s lifetime=%.1fs",
+                pos.toShortString(),
+                reason,
                 (System.currentTimeMillis() - openedAt) / 1000.0);
     }
 
-    /** Drops every buffered frame; {@code resetReady} also puts the session back into buffering. */
-    private void clearQueue(boolean resetReady) {
+    private void dropFrames() {
         synchronized (queue) {
             DecodedFrame frame;
             while ((frame = queue.pollFirst()) != null) frame.close();
-            if (resetReady) {
-                bufferReady = false;
-                rebuffering = true;
-                progress = 0.72F;
-            }
         }
+    }
+
+    /**
+     * Keeps a seek target inside the media, leaving a frame of slack at the end so the last frame
+     * is still reachable. Without a known duration there is nothing to clamp against.
+     */
+    private static double clampToKnown(double seconds, double knownDuration) {
+        if (knownDuration <= 0.0) return Math.max(0.0, seconds);
+        return Math.min(Math.max(0.0, seconds), Math.max(0.0, knownDuration - 0.1));
+    }
+
+    /** Drops the buffer and goes back to "buffering": the stream has to earn readiness again. */
+    private void restartBuffering() {
+        dropFrames();
+        bufferReady = false;
+        rebuffering = true;
     }
 
     // =============================== decoding ===============================
@@ -441,7 +490,6 @@ public final class PlaybackSession {
         FFmpegFrameGrabber grabber = null;
         try {
             if (url.isBlank()) return;
-            progress = 0.08F;
             // Resolve any indirect link (a parsing API, a share page) into a real stream first.
             long resolveStarted = System.currentTimeMillis();
             String source;
@@ -452,12 +500,19 @@ public final class PlaybackSession {
                 failedAt = System.currentTimeMillis();
                 errorMessage = SourceResolver.describe(error);
                 ZCinema.LOGGER.warn("Screen {} cannot resolve {}", pos, url, error);
-                ZCinemaLog.log("decode", "resolve FAILED screen=%s url=%s error=%s", pos.toShortString(),
-                        ZCinemaLog.shorten(url, 300), error.getMessage());
+                ZCinemaLog.log(
+                        "decode",
+                        "resolve FAILED screen=%s url=%s error=%s",
+                        pos.toShortString(),
+                        ZCinemaLog.shorten(url, 300),
+                        error.getMessage());
                 return;
             }
             streamUrl = source;
-            ZCinemaLog.log("decode", "resolved in %dms: %s", System.currentTimeMillis() - resolveStarted,
+            ZCinemaLog.log(
+                    "decode",
+                    "resolved in %dms: %s",
+                    System.currentTimeMillis() - resolveStarted,
                     ZCinemaLog.shorten(source, 300));
             grabber = new FFmpegFrameGrabber(source);
             grabber.setImageMode(FrameGrabber.ImageMode.RAW);
@@ -465,7 +520,6 @@ public final class PlaybackSession {
             SourceResolver.applyStreamOptions(grabber, source);
             grabber.start();
             if (isRetired(generation)) return;
-            progress = 0.18F;
             decodeHeartbeat = System.currentTimeMillis();
 
             double containerDuration = grabber.getLengthInTime() / 1_000_000.0;
@@ -473,18 +527,22 @@ public final class PlaybackSession {
             // the length of what is left to read, which would clamp the timeline backwards.
             if (containerDuration > duration) duration = containerDuration;
             double knownDuration = durationSeconds();
-            double requestedStart = knownDuration > 0.0
-                    ? Math.min(Math.max(0.0, startSeconds), Math.max(0.0, knownDuration - 0.1))
-                    : Math.max(0.0, startSeconds);
+            double requestedStart = clampToKnown(startSeconds, knownDuration);
 
             double timestampTarget = 0.0;
             // Ask about the *resolved* link: a parsing API in front of a CDN would otherwise look
             // like the thing that has to honour Range, and its redirect answer usually does not.
             boolean canSeek = RangeSupport.supports(url, source);
             rangeOk = canSeek;
-            ZCinemaLog.log("decode", "stream open screen=%s requestedStart=%.3fs containerDuration=%.3fs "
+            ZCinemaLog.log(
+                    "decode",
+                    "stream open screen=%s requestedStart=%.3fs containerDuration=%.3fs "
                             + "knownDuration=%.3fs rangeOk=%s",
-                    pos.toShortString(), requestedStart, containerDuration, knownDuration, canSeek);
+                    pos.toShortString(),
+                    requestedStart,
+                    containerDuration,
+                    knownDuration,
+                    canSeek);
             if (requestedStart > 0.25 && canSeek) {
                 try {
                     grabber.setTimestamp((long) (requestedStart * 1_000_000.0));
@@ -494,50 +552,59 @@ public final class PlaybackSession {
                     seekLandedTarget = requestedStart;
                 } catch (Exception error) {
                     ZCinema.LOGGER.debug("Seek failed for {}, decoding from the start", url, error);
-                    ZCinemaLog.log("seek", "initial seek FAILED target=%.3fs, decoding from 0: %s",
-                            requestedStart, error.getMessage());
+                    ZCinemaLog.log(
+                            "seek",
+                            "initial seek FAILED target=%.3fs, decoding from 0: %s",
+                            requestedStart,
+                            error.getMessage());
                     timestampTarget = 0.0;
                 }
             } else if (requestedStart > 0.25) {
-                ZCinema.LOGGER.info("Source {} does not support Range, decoding from the start and "
-                        + "fast-forwarding to {}s", url,
-                        String.format(java.util.Locale.ROOT, "%.3f", requestedStart));
+                ZCinema.LOGGER.info(
+                        "Source {} does not support Range, decoding from the start and "
+                                + "fast-forwarding to {}s",
+                        url,
+                        ZCinemaLog.fmt(requestedStart));
                 ZCinemaLog.log("seek", "join fast-forward target=%.3fs (no Range)", requestedStart);
             }
-            progress = 0.60F;
 
             double timestampOrigin = Double.NaN;
             double maxBuffer = Math.max(0.25D, ClientConfig.bufferSeconds);
-            progress = 0.72F;
             try (FrameScaler scaler = new FrameScaler()) {
                 int maxWidth = ClientConfig.maxFrameWidth;
                 int maxHeight = ClientConfig.maxFrameHeight;
                 while (!isRetired(generation)) {
                     if (!Double.isNaN(pendingSeek)) {
-                        double target = knownDuration > 0.0
-                                ? Math.min(Math.max(0.0, pendingSeek), Math.max(0.0, knownDuration - 0.1))
-                                : Math.max(0.0, pendingSeek);
+                        double target = clampToKnown(pendingSeek, knownDuration);
                         pendingSeek = Double.NaN;
-                        clearQueue(true);
+                        restartBuffering();
                         if (canSeek) {
                             try {
                                 grabber.setTimestamp((long) (target * 1_000_000.0));
                                 timestampOrigin = Double.NaN;
                                 timestampTarget = target;
                                 previousRawTimestamp = Double.NaN;
-                                ZCinema.LOGGER.info("Screen {} seeks its stream to {}s", pos,
-                                        String.format(java.util.Locale.ROOT, "%.3f", target));
+                                ZCinema.LOGGER.info(
+                                        "Screen {} seeks its stream to {}s",
+                                        pos,
+                                        ZCinemaLog.fmt(target));
                                 seekAppliedAt = System.currentTimeMillis();
                                 seekLandedTarget = target;
-                                ZCinemaLog.log("seek", "applied target=%.3fs waited=%dms", target,
+                                ZCinemaLog.log(
+                                        "seek",
+                                        "applied target=%.3fs waited=%dms",
+                                        target,
                                         seekAppliedAt - lastSeekAt);
                             } catch (Exception error) {
                                 // The connection refused to reposition. Continuing from the old
                                 // position would leave the decoder ahead of the new clock (or
                                 // decoding through minutes of video), so start a fresh stream.
-                                ZCinema.LOGGER.warn("Screen {} could not seek to {}s, reopening the "
-                                        + "stream", pos,
-                                        String.format(java.util.Locale.ROOT, "%.3f", target), error);
+                                ZCinema.LOGGER.warn(
+                                        "Screen {} could not seek to {}s, reopening the "
+                                                + "stream",
+                                        pos,
+                                        ZCinemaLog.fmt(target),
+                                        error);
                                 openDecoder(target);
                                 continue;
                             }
@@ -545,8 +612,10 @@ public final class PlaybackSession {
                             // No Range support: the connection can only ever move forward, so a
                             // target ahead is reached by decoding on, and one behind by the pacing
                             // loop holding frames back. Seeking here would break the connection.
-                            ZCinema.LOGGER.debug("Screen {} fast-forwards to {}s (source has no Range)",
-                                    pos, String.format(java.util.Locale.ROOT, "%.3f", target));
+                            ZCinema.LOGGER.debug(
+                                    "Screen {} fast-forwards to {}s (source has no Range)",
+                                    pos,
+                                    ZCinemaLog.fmt(target));
                             ZCinemaLog.log("seek", "fast-forward target=%.3fs (no Range)", target);
                         }
                         decodeHeartbeat = System.currentTimeMillis();
@@ -569,10 +638,16 @@ public final class PlaybackSession {
                             }
                             ended = true;
                             if (!durationReported && duration > 0.0) sendDuration(duration);
-                            ZCinema.LOGGER.info("Screen {} finished {} at {}s", pos, url,
-                                    String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()));
-                            ZCinemaLog.log("decode", "end of media screen=%s duration=%.3fs",
-                                    pos.toShortString(), durationSeconds());
+                            ZCinema.LOGGER.info(
+                                    "Screen {} finished {} at {}s",
+                                    pos,
+                                    url,
+                                    ZCinemaLog.fmt(mediaSeconds()));
+                            ZCinemaLog.log(
+                                    "decode",
+                                    "end of media screen=%s duration=%.3fs",
+                                    pos.toShortString(),
+                                    durationSeconds());
                             return;
                         }
                         // The stream ran dry while the clock still has media to show - a seek the
@@ -584,14 +659,22 @@ public final class PlaybackSession {
                         }
                         lastRecoveryAt = System.currentTimeMillis();
                         if (!canSeek || ++recoveries > MAX_EOF_RECOVERIES) {
-                            throw new IOException("stream ended early at "
-                                    + String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()) + "s");
+                            throw new IOException(
+                                    "stream ended early at "
+                                            + ZCinemaLog.fmt(mediaSeconds())
+                                            + "s");
                         }
-                        ZCinema.LOGGER.debug("Screen {} stream ended early, repositioning to {}s",
-                                pos, String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()));
-                        ZCinemaLog.log("decode", "early EOF screen=%s at=%.3fs recovery=%d",
-                                pos.toShortString(), mediaSeconds(), recoveries);
-                        clearQueue(true);
+                        ZCinema.LOGGER.debug(
+                                "Screen {} stream ended early, repositioning to {}s",
+                                pos,
+                                ZCinemaLog.fmt(mediaSeconds()));
+                        ZCinemaLog.log(
+                                "decode",
+                                "early EOF screen=%s at=%.3fs recovery=%d",
+                                pos.toShortString(),
+                                mediaSeconds(),
+                                recoveries);
+                        restartBuffering();
                         pendingSeek = Math.max(0.0, mediaSeconds() - 0.5);
                         continue;
                     }
@@ -600,9 +683,14 @@ public final class PlaybackSession {
                     if (!(frame.opaque instanceof AVFrame)) continue;
 
                     double rawTs = frame.timestamp / 1_000_000.0;
-                    if (!Double.isNaN(previousRawTimestamp) && Math.abs(rawTs - previousRawTimestamp) > 0.75) {
-                        ZCinemaLog.log("decode", "video jump raw %s -> %s (delta %+.3fs) media=%.3fs",
-                                fmt(previousRawTimestamp), fmt(rawTs), rawTs - previousRawTimestamp,
+                    if (!Double.isNaN(previousRawTimestamp)
+                            && Math.abs(rawTs - previousRawTimestamp) > 0.75) {
+                        ZCinemaLog.log(
+                                "decode",
+                                "video jump raw %s -> %s (delta %+.3fs) media=%.3fs",
+                                ZCinemaLog.fmt(previousRawTimestamp),
+                                ZCinemaLog.fmt(rawTs),
+                                rawTs - previousRawTimestamp,
                                 mediaSeconds());
                     }
                     previousRawTimestamp = rawTs;
@@ -610,8 +698,12 @@ public final class PlaybackSession {
                     double ts = Math.max(0.0, rawTs - timestampOrigin);
                     lastDecodedTs = ts;
                     if (!Double.isNaN(seekLandedTarget) && ts >= seekLandedTarget - 0.5) {
-                        ZCinemaLog.log("seek", "landed target=%.3fs firstFrame=%.3fs took=%dms",
-                                seekLandedTarget, ts, System.currentTimeMillis() - seekAppliedAt);
+                        ZCinemaLog.log(
+                                "seek",
+                                "landed target=%.3fs firstFrame=%.3fs took=%dms",
+                                seekLandedTarget,
+                                ts,
+                                System.currentTimeMillis() - seekAppliedAt);
                         seekLandedTarget = Double.NaN;
                         resyncing = false;
                     }
@@ -648,16 +740,18 @@ public final class PlaybackSession {
                 failed = true;
                 failedAt = System.currentTimeMillis();
                 errorMessage = String.valueOf(error.getMessage());
-                ZCinema.LOGGER.warn("Screen {} failed to stream {} from {}s", pos, url, startSeconds, error);
-                ZCinemaLog.log("decode", "FAILED screen=%s from=%.3fs cause=%s", pos.toShortString(),
-                        startSeconds, ZCinemaLog.cause(error));
+                ZCinema.LOGGER.warn(
+                        "Screen {} failed to stream {} from {}s", pos, url, startSeconds, error);
+                ZCinemaLog.log(
+                        "decode",
+                        "FAILED screen=%s from=%.3fs cause=%s",
+                        pos.toShortString(),
+                        startSeconds,
+                        ZCinemaLog.cause(error));
             }
         } finally {
             if (grabber != null) {
-                try {
-                    grabber.close();
-                } catch (Throwable ignored) {
-                }
+                ZCinemaLog.closeQuietly(grabber);
             }
         }
     }
@@ -673,8 +767,10 @@ public final class PlaybackSession {
      */
     private boolean awaitPlaybackEnd(int generation) throws InterruptedException {
         double known = duration > 0.0 ? duration : be.clientDurationSeconds();
-        while (!isRetired(generation) && Double.isNaN(pendingSeek)
-                && known > 0.0 && mediaSeconds() < known - 0.05) {
+        while (!isRetired(generation)
+                && Double.isNaN(pendingSeek)
+                && known > 0.0
+                && mediaSeconds() < known - 0.05) {
             decodeHeartbeat = System.currentTimeMillis();
             Thread.sleep(4L);
         }
@@ -688,7 +784,6 @@ public final class PlaybackSession {
                     queue.addLast(frame);
                     if (!bufferReady) {
                         double buffered = bufferedSeconds();
-                        progress = (float) Math.min(0.95, 0.72 + 0.23 * buffered / STARTUP_BUFFER_SECONDS);
                         if (buffered >= STARTUP_BUFFER_SECONDS) markBufferReady();
                     }
                     return;
@@ -711,11 +806,14 @@ public final class PlaybackSession {
             bufferReady = true;
             rebuffering = false;
             resyncing = false;
-            progress = 0.95F;
-            ZCinema.LOGGER.debug("Screen {} buffered {}s and is ready", pos,
-                    String.format(java.util.Locale.ROOT, "%.3f", bufferedSeconds()));
-            ZCinemaLog.log("buffer", "ready screen=%s buffered=%.3fs queue=%d", pos.toShortString(),
-                    bufferedSeconds(), queue.size());
+            ZCinema.LOGGER.debug(
+                    "Screen {} buffered {}s and is ready", pos, ZCinemaLog.fmt(bufferedSeconds()));
+            ZCinemaLog.log(
+                    "buffer",
+                    "ready screen=%s buffered=%.3fs queue=%d",
+                    pos.toShortString(),
+                    bufferedSeconds(),
+                    queue.size());
         }
     }
 
@@ -746,24 +844,37 @@ public final class PlaybackSession {
                 // previous position. If the oldest one is far beyond where we are, the whole
                 // queue is stale - drop it and go back to buffering instead of showing nothing
                 // forever while the session stays "ready" (which would also keep old audio).
-                if (!queue.isEmpty() && queue.peekFirst().ts > master + hardResyncSeconds() + 0.5) {
-                    ZCinemaLog.log("buffer", "stale queue dropped screen=%s first=%.3fs master=%.3fs",
-                            pos.toShortString(), queue.peekFirst().ts, master);
-                    clearQueue(true);
+                if (!queue.isEmpty()
+                        && queue.peekFirst().ts > master + ClientConfig.hardResyncSeconds + 0.5) {
+                    ZCinemaLog.log(
+                            "buffer",
+                            "stale queue dropped screen=%s first=%.3fs master=%.3fs",
+                            pos.toShortString(),
+                            queue.peekFirst().ts,
+                            master);
+                    restartBuffering();
                 }
                 while (!queue.isEmpty() && queue.peekFirst().ts <= master + DISPLAY_LEAD_SECONDS) {
                     if (frame != null) frame.close();
                     frame = queue.pollFirst();
                 }
-                if (frame == null && queue.isEmpty() && textureLocation != null
-                        && System.currentTimeMillis() - lastFrameUploadedAt > VIDEO_UNDERRUN_GRACE_MILLIS) {
+                if (frame == null
+                        && queue.isEmpty()
+                        && textureLocation != null
+                        && System.currentTimeMillis() - lastFrameUploadedAt
+                                > VIDEO_UNDERRUN_GRACE_MILLIS) {
                     // Nothing left to show and nothing new arrived: we really are buffering.
                     bufferReady = false;
                     rebuffering = true;
-                    progress = 0.72F;
-                    ZCinema.LOGGER.debug("Screen {} ran dry at {}s, buffering again", pos,
-                            String.format(java.util.Locale.ROOT, "%.3f", master));
-                    ZCinemaLog.log("buffer", "underrun screen=%s master=%.3fs", pos.toShortString(), master);
+                    ZCinema.LOGGER.debug(
+                            "Screen {} ran dry at {}s, buffering again",
+                            pos,
+                            ZCinemaLog.fmt(master));
+                    ZCinemaLog.log(
+                            "buffer",
+                            "underrun screen=%s master=%.3fs",
+                            pos.toShortString(),
+                            master);
                 }
             }
         }
@@ -771,7 +882,6 @@ public final class PlaybackSession {
         if (frame != null) {
             lastFrameUploadedAt = System.currentTimeMillis();
             displayedTs = frame.ts;
-            progress = 1.0F;
             upload(frame);
         }
         return textureLocation == null ? null : new FrameView(textureLocation, width, height);
@@ -779,13 +889,15 @@ public final class PlaybackSession {
 
     private FrameView upload(DecodedFrame frame) {
         if (texture == null || width != frame.width || height != frame.height) {
-            if (textureLocation != null) Minecraft.getInstance().getTextureManager().release(textureLocation);
-            textureLocation = ResourceLocation.fromNamespaceAndPath(ZCinema.MODID,
-                    "screen_stream/" + Long.toUnsignedString(pos.asLong()));
-            texture = FrameUploader.create(frame.image);
+            if (textureLocation != null)
+                Minecraft.getInstance().getTextureManager().release(textureLocation);
+            textureLocation = ZCinema.id("screen_stream/" + Long.toUnsignedString(pos.asLong()));
+            // The texture takes ownership of the image and closes it when it is released.
+            texture = new DynamicTexture(frame.image);
             Minecraft.getInstance().getTextureManager().register(textureLocation, texture);
         } else {
-            FrameUploader.update(texture, frame.image);
+            texture.setPixels(frame.image);
+            texture.upload();
         }
         width = frame.width;
         height = frame.height;
@@ -806,17 +918,23 @@ public final class PlaybackSession {
         clockMoving = !be.clientFrozen() && media != previousMediaSeconds;
         previousMediaSeconds = media;
 
-        if (duration > 0.0 && Math.abs(be.clientDurationSeconds() - duration) > 0.05
+        if (duration > 0.0
+                && Math.abs(be.clientDurationSeconds() - duration) > 0.05
                 && System.currentTimeMillis() - lastMediaReportAt > MEDIA_REPORT_INTERVAL_MILLIS) {
             sendDuration(duration);
         }
 
-        if (be.clientPlaying() && !be.clientFrozen() && !failed && !ended
+        if (be.clientPlaying()
+                && !be.clientFrozen()
+                && !failed
+                && !ended
                 && System.currentTimeMillis() - decodeHeartbeat > DECODER_DEAD_MILLIS) {
             failed = true;
             failedAt = System.currentTimeMillis();
             errorMessage = "decoder stalled";
-            ZCinemaLog.log("decode", "watchdog: no frames for %dms, marking failed",
+            ZCinemaLog.log(
+                    "decode",
+                    "watchdog: no frames for %dms, marking failed",
                     System.currentTimeMillis() - decodeHeartbeat);
         }
         if (failed && System.currentTimeMillis() - failedAt > RETRY_DELAY_MILLIS) {
@@ -831,9 +949,14 @@ public final class PlaybackSession {
             errorMessage = null;
             recoveries = 0;
             decodeHeartbeat = System.currentTimeMillis();
-            ZCinema.LOGGER.info("Screen {} timeline moved back to {}s, decoding again", pos,
-                    String.format(java.util.Locale.ROOT, "%.3f", mediaSeconds()));
-            ZCinemaLog.log("session", "replaying after end screen=%s at=%.3fs", pos.toShortString(),
+            ZCinema.LOGGER.info(
+                    "Screen {} timeline moved back to {}s, decoding again",
+                    pos,
+                    ZCinemaLog.fmt(mediaSeconds()));
+            ZCinemaLog.log(
+                    "session",
+                    "replaying after end screen=%s at=%.3fs",
+                    pos.toShortString(),
                     mediaSeconds());
             openDecoder(mediaSeconds());
         }
@@ -866,20 +989,37 @@ public final class PlaybackSession {
         int droppedRate = dropped - lastDroppedFrames;
         lastDecodedFrames = decoded;
         lastDroppedFrames = dropped;
-        ZCinemaLog.log("state", "screen=%s shared=%.3fs media=%.3fs itemStart=%+.3fs drift=%+.3fs "
+        ZCinemaLog.log(
+                "state",
+                "screen=%s shared=%.3fs media=%.3fs itemStart=%+.3fs drift=%+.3fs "
                         + "videoErr=%s audioErr=%s audioSrc=%s audioInst=%d frame=%s buf=%d/%s "
                         + "ready=%s rebuf=%s seeking=%s "
                         + "resyncing=%s playing=%s frozen=%s clockMoving=%s failed=%s ended=%s rangeOk=%s "
                         + "video=%d/s drop=%d/s",
-                pos.toShortString(), targetSeconds(), media, itemStartSeconds, media - targetSeconds(),
-                fmt(videoError), fmt(audioError), fmt(audioSource), ScreenAudio.instanceCount(),
-                fmt(displayedTs), buffered, fmt(bufferedSeconds()),
-                bufferReady, rebuffering, seeking(), resyncing, be.clientPlaying(), be.clientFrozen(),
-                clockMoving, failed, ended, rangeOk, decodedRate, droppedRate);
-    }
-
-    private static String fmt(double value) {
-        return Double.isNaN(value) ? "n/a" : String.format(java.util.Locale.ROOT, "%.3f", value);
+                pos.toShortString(),
+                targetSeconds(),
+                media,
+                itemStartSeconds,
+                media - targetSeconds(),
+                ZCinemaLog.fmt(videoError),
+                ZCinemaLog.fmt(audioError),
+                ZCinemaLog.fmt(audioSource),
+                ScreenAudio.instanceCount(),
+                ZCinemaLog.fmt(displayedTs),
+                buffered,
+                ZCinemaLog.fmt(bufferedSeconds()),
+                bufferReady,
+                rebuffering,
+                seeking(),
+                resyncing,
+                be.clientPlaying(),
+                be.clientFrozen(),
+                clockMoving,
+                failed,
+                ended,
+                rangeOk,
+                decodedRate,
+                droppedRate);
     }
 
     /**
@@ -895,31 +1035,44 @@ public final class PlaybackSession {
         if (resyncing) {
             // Do not stack repositions: the one in flight will land (or has failed).
             if (now - resyncSince < 15_000L) return;
-            ZCinemaLog.log("clock", "resync watchdog screen=%s: no landing after %dms, retrying",
-                    pos.toShortString(), now - resyncSince);
+            ZCinemaLog.log(
+                    "clock",
+                    "resync watchdog screen=%s: no landing after %dms, retrying",
+                    pos.toShortString(),
+                    now - resyncSince);
             resyncing = false;
         }
         double anchor = targetSeconds();
         double local = Double.isNaN(displayedTs) ? lastDecodedTs : displayedTs;
         if (Double.isNaN(local)) return;
         double diff = local - anchor;
-        if (Math.abs(diff) < hardResyncSeconds()) {
+        if (Math.abs(diff) < ClientConfig.hardResyncSeconds) {
             divergenceSince = 0L;
             return;
         }
         if (divergenceSince == 0L) {
             divergenceSince = now;
-            ZCinemaLog.log("clock", "divergence screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs",
-                    pos.toShortString(), anchor, local, diff);
+            ZCinemaLog.log(
+                    "clock",
+                    "divergence screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs",
+                    pos.toShortString(),
+                    anchor,
+                    local,
+                    diff);
             return;
         }
         // Only act when the divergence persists: a single late frame is normal. Note this must
         // not use seeking(): that also reports true for every recent seek or rebuffer, which
         // used to block the reposition for 20s and left slow machines fast-forward-decoding.
         if (now - divergenceSince < 500L || now - lastSeekAt < 1_000L) return;
-        ZCinemaLog.log("clock", "reposition screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs "
-                        + "sustained=%dms",
-                pos.toShortString(), anchor, local, diff, now - divergenceSince);
+        ZCinemaLog.log(
+                "clock",
+                "reposition screen=%s anchor=%.3fs decoded=%.3fs delta=%+.3fs " + "sustained=%dms",
+                pos.toShortString(),
+                anchor,
+                local,
+                diff,
+                now - divergenceSince);
         hardResync();
     }
 
@@ -933,10 +1086,15 @@ public final class PlaybackSession {
 
     public PlaybackHealth health() {
         if (failed) {
-            String message = errorMessage == null ? "" : errorMessage.toLowerCase(java.util.Locale.ROOT);
-            boolean networkish = message.contains("timed out") || message.contains("timeout")
-                    || message.contains("connection") || message.contains("host")
-                    || message.contains("http 4") || message.contains("http 5");
+            String message =
+                    errorMessage == null ? "" : errorMessage.toLowerCase(java.util.Locale.ROOT);
+            boolean networkish =
+                    message.contains("timed out")
+                            || message.contains("timeout")
+                            || message.contains("connection")
+                            || message.contains("host")
+                            || message.contains("http 4")
+                            || message.contains("http 5");
             return networkish ? PlaybackHealth.SOURCE_UNREACHABLE : PlaybackHealth.BUFFERING;
         }
         if (!bufferReady || rebuffering) return PlaybackHealth.BUFFERING;
@@ -953,10 +1111,6 @@ public final class PlaybackSession {
 
     public long touchedAt() {
         return touchStamp.get();
-    }
-
-    public boolean starving() {
-        return rebuffering;
     }
 
     public String errorMessage() {

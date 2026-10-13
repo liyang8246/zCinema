@@ -13,12 +13,16 @@ public final class ModBlocks {
      * The screen surface: every block of a registered screen is this block. Its properties are
      * copied straight from black concrete, so it looks, sounds, breaks and drops identically.
      */
-    public static final Block SCREEN = Registry.register(BuiltInRegistries.BLOCK, ZCinema.id("screen"),
-            new ScreenBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BLACK_CONCRETE).forceSolidOn()));
+    public static final Block SCREEN =
+            Registry.register(
+                    BuiltInRegistries.BLOCK,
+                    ZCinema.id("screen"),
+                    new ScreenBlock(
+                            BlockBehaviour.Properties.ofFullCopy(Blocks.BLACK_CONCRETE)
+                                    .forceSolidOn()));
 
     private ModBlocks() {}
 
     /** Loading this holder class is what performs the registration. */
-    public static void register() {
-    }
+    public static void register() {}
 }

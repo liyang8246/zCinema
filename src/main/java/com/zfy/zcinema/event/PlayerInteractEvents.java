@@ -41,74 +41,90 @@ public final class PlayerInteractEvents {
     private PlayerInteractEvents() {}
 
     public static void register() {
-        UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
-            BlockPos pos = hitResult.getBlockPos();
-            BlockState state = level.getBlockState(pos);
-            if (!ScreenDetector.isScreenMaterial(state)) return InteractionResult.PASS;
+        UseBlockCallback.EVENT.register(
+                (player, level, hand, hitResult) -> {
+                    BlockPos pos = hitResult.getBlockPos();
+                    BlockState state = level.getBlockState(pos);
+                    if (!ScreenDetector.isScreenMaterial(state)) return InteractionResult.PASS;
 
-            // The stick is part of every gesture; without it the screen is just a wall.
-            if (!holdsStick(player, hand)) return InteractionResult.PASS;
-            if (!player.isShiftKeyDown()) return InteractionResult.PASS;
+                    // The stick is part of every gesture; without it the screen is just a wall.
+                    if (!holdsStick(player, hand)) return InteractionResult.PASS;
+                    if (!player.isShiftKeyDown()) return InteractionResult.PASS;
 
-            if (!(level instanceof ServerLevel serverLevel)) {
-                // Client side only predicts the gesture; the server owns what actually happens.
-                return InteractionResult.PASS;
-            }
+                    if (!(level instanceof ServerLevel serverLevel)) {
+                        // Client side only predicts the gesture; the server owns what actually
+                        // happens.
+                        return InteractionResult.PASS;
+                    }
 
-            Direction hitFace = hitResult.getDirection();
-            Vec3 eye = player.getEyePosition();
-            ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
-            if (area == null) {
-                tell(player, "message.zcinema.not_flat");
-                ZCinemaLog.log("gesture", "not flat pos=%s face=%s player=%s", pos.toShortString(), hitFace,
-                        player.getName().getString());
-                return InteractionResult.SUCCESS;
-            }
+                    Direction hitFace = hitResult.getDirection();
+                    Vec3 eye = player.getEyePosition();
+                    ScreenArea area = ScreenDetector.detect(serverLevel, pos, hitFace, eye);
+                    if (area == null) {
+                        tell(player, "message.zcinema.not_flat");
+                        ZCinemaLog.log(
+                                "gesture",
+                                "not flat pos=%s face=%s player=%s",
+                                pos.toShortString(),
+                                hitFace,
+                                player.getName().getString());
+                        return InteractionResult.SUCCESS;
+                    }
 
-            CinemaScreenBlockEntity existing = findScreen(serverLevel, area);
-            if (existing != null) {
-                ZCinemaLog.log("gesture", "open panel screen=%s pos=%s player=%s",
-                        existing.getBlockPos().toShortString(), pos.toShortString(),
-                        player.getName().getString());
-                openPanel(player, existing);
-                return InteractionResult.SUCCESS;
-            }
+                    CinemaScreenBlockEntity existing = findScreen(serverLevel, area);
+                    if (existing != null) {
+                        ZCinemaLog.log(
+                                "gesture",
+                                "open panel screen=%s pos=%s player=%s",
+                                existing.getBlockPos().toShortString(),
+                                pos.toShortString(),
+                                player.getName().getString());
+                        openPanel(player, existing);
+                        return InteractionResult.SUCCESS;
+                    }
 
-            // A fresh wall: turn the whole rectangle into screen blocks, then let the clicked block
-            // carry the playback state.
-            installScreenBlocks(serverLevel, area);
-            if (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
-                be.setScreenArea(area);
-                be.broadcastState();
-            }
-            tell(player, "message.zcinema.created", area.screenWidth(), area.screenHeight());
-            ZCinemaLog.log("gesture", "create screen=%s size=%dx%d normal=%s player=%s",
-                    area.min().toShortString(), area.screenWidth(), area.screenHeight(), area.normal(),
-                    player.getName().getString());
-            return InteractionResult.SUCCESS;
-        });
+                    // A fresh wall: turn the whole rectangle into screen blocks, then let the
+                    // clicked block
+                    // carry the playback state.
+                    installScreenBlocks(serverLevel, area);
+                    if (serverLevel.getBlockEntity(pos) instanceof CinemaScreenBlockEntity be) {
+                        be.setScreenArea(area);
+                        be.broadcastState();
+                    }
+                    tell(
+                            player,
+                            "message.zcinema.created",
+                            area.screenWidth(),
+                            area.screenHeight());
+                    ZCinemaLog.log(
+                            "gesture",
+                            "create screen=%s size=%dx%d normal=%s player=%s",
+                            area.min().toShortString(),
+                            area.screenWidth(),
+                            area.screenHeight(),
+                            area.normal(),
+                            player.getName().getString());
+                    return InteractionResult.SUCCESS;
+                });
     }
 
     /** Replaces every block of the detected rectangle that is screen material with the screen block. */
     private static void installScreenBlocks(ServerLevel level, ScreenArea area) {
-        Direction facing = area.normal().getAxis().isHorizontal()
-                ? area.normal().getOpposite()
-                : Direction.NORTH;
-        BlockState screen = ModBlocks.SCREEN.defaultBlockState().setValue(ScreenBlock.FACING, facing);
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int x = area.min().getX(); x <= area.max().getX(); x++) {
-            for (int y = area.min().getY(); y <= area.max().getY(); y++) {
-                for (int z = area.min().getZ(); z <= area.max().getZ(); z++) {
-                    cursor.set(x, y, z);
+        Direction facing =
+                area.normal().getAxis().isHorizontal()
+                        ? area.normal().getOpposite()
+                        : Direction.NORTH;
+        BlockState screen =
+                ModBlocks.SCREEN.defaultBlockState().setValue(ScreenBlock.FACING, facing);
+        area.forEachPos(
+                cursor -> {
                     BlockState current = level.getBlockState(cursor);
-                    // Only the material the detector found is converted: a rectangle drawn around an
-                    // irregular wall must not swallow whatever else stands in its corners.
+                    // Only the material the detector found is converted: a rectangle drawn around
+                    // an irregular wall must not swallow whatever else stands in its corners.
                     if (ScreenDetector.isScreenMaterial(current) && !current.is(ModBlocks.SCREEN)) {
                         level.setBlockAndUpdate(cursor, screen);
                     }
-                }
-            }
-        }
+                });
     }
 
     /**
@@ -122,7 +138,8 @@ public final class PlayerInteractEvents {
             for (int y = area.min().getY(); y <= area.max().getY(); y++) {
                 for (int z = area.min().getZ(); z <= area.max().getZ(); z++) {
                     cursor.set(x, y, z);
-                    if (level.getBlockEntity(cursor) instanceof CinemaScreenBlockEntity be && be.hasScreenArea()) {
+                    if (level.getBlockEntity(cursor) instanceof CinemaScreenBlockEntity be
+                            && be.hasScreenArea()) {
                         return be;
                     }
                 }
@@ -140,7 +157,8 @@ public final class PlayerInteractEvents {
         if (!(player instanceof ServerPlayer server)) return;
         // A double-triggered interact must not close and reopen the panel: only open it when the
         // player is not already looking at this very screen.
-        if (server.containerMenu instanceof CinemaScreenMenu menu && menu.pos().equals(be.getBlockPos())) {
+        if (server.containerMenu instanceof CinemaScreenMenu menu
+                && menu.pos().equals(be.getBlockPos())) {
             return;
         }
         server.openMenu(be);
