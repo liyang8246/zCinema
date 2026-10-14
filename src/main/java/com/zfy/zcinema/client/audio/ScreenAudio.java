@@ -32,17 +32,10 @@ public final class ScreenAudio {
         BlockPos pos = session.blockPos();
 
         // A singleplayer pause hard-pauses every non-music sound (SoundEngine.pauseAllExcept), our
-        // streaming screen audio included, while the picture and the shared clock keep running on
-        // the wall clock. The wall-clock drift estimate cannot see that, so leaving the frozen
-        // sound alone would keep it behind by the whole pause with no way to notice. Close it and
-        // let the controller reopen it at the current position once the game resumes.
-        if (minecraft.isPaused()) {
-            if (INSTANCES.containsKey(pos)) {
-                ZCinema.LOGGER.debug("Screen {} audio stopped: the game is paused", pos);
-                stop(pos, "game paused");
-            }
-            return;
-        }
+        // streaming screen audio included. The shared clock freezes with it (see
+        // PlaybackSession.targetSeconds), so the sound comes back exactly where it left off when
+        // the game resumes and needs no reopen. Nothing to do while the pause lasts.
+        if (minecraft.isPaused()) return;
 
         CinemaSoundInstance current = INSTANCES.get(pos);
         if (current != null && current.isStopped()) {

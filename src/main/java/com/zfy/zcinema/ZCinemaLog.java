@@ -105,7 +105,10 @@ public final class ZCinemaLog {
     /** Closes without throwing, for cleanup paths that must not mask the real error. */
     public static void closeQuietly(AutoCloseable closeable) {
         if (closeable == null) return;
-        ZCinemaLog.closeQuietly(closeable);
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+        }
     }
 
     /** Wrapped exceptions would otherwise hide the real reason in a one-line log. */

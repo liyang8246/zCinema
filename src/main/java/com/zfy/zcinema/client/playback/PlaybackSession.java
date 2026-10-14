@@ -21,7 +21,6 @@ import org.bytedeco.javacv.FrameGrabber;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * One screen's local playback. The session pulls the MP4 itself (the server never relays video)
@@ -64,7 +63,6 @@ public final class PlaybackSession {
 
     private final CinemaScreenBlockEntity be;
     private final BlockPos pos;
-    private final AtomicLong touchStamp = new AtomicLong();
 
     private final String url;
 
@@ -130,6 +128,9 @@ public final class PlaybackSession {
     /** When the decoded position first diverged from the shared clock by a real amount. */
     private long divergenceSince;
 
+    /** True while this client's game is paused (death screen, escape menu, ...). */
+    private volatile boolean gamePaused;
+
     /** True from issuing a reposition until its frames landed (or gave up). */
     private volatile boolean resyncing;
 
@@ -171,7 +172,12 @@ public final class PlaybackSession {
 
     // =============================== clock ===============================
 
-    /** The shared clock, straight from the last server snapshot. */
+    /**
+     * The shared clock, straight from the last server snapshot. It keeps running while the game is
+     * paused: the server never stops and the decoders keep filling their queues, so the media
+     * position stays meaningful. The audio no longer estimates anything from the wall clock, so
+     * a pause cannot distort its position either.
+     */
     private double targetSeconds() {
         return be.clientPositionSeconds();
     }
@@ -283,10 +289,23 @@ public final class PlaybackSession {
      * would otherwise make the sound lead the picture by roughly that much. Anchoring to the
      * displayed frame also keeps the sound matched to this client's actual decode position
      * instead of the abstract shared clock.
+     *
+     * <p>Once nobody is looking, the displayed frame stops moving - a session is never torn down
+     * for being out of view any more - so a stale frame would freeze the audio target forever.
+     * After the same grace the video underrun uses, fall back to the shared clock instead.
      */
     public double audioReferenceSeconds() {
-        double picture = Double.isNaN(displayedTs) ? mediaSeconds() : displayedTs;
+        boolean showing =
+                !Double.isNaN(displayedTs)
+                        && System.currentTimeMillis() - lastFrameUploadedAt
+                                <= VIDEO_UNDERRUN_GRACE_MILLIS;
+        double picture = showing ? displayedTs : mediaSeconds();
         return Math.max(0.0, picture - ClientConfig.audioDelayMs / 1000.0);
+    }
+
+    /** True while the game is paused: the sound engine is stopped, so the clock must not run. */
+    public boolean audioPaused() {
+        return gamePaused;
     }
 
     // =============================== lifecycle ===============================
@@ -833,7 +852,6 @@ public final class PlaybackSession {
      * never be closed here. Frames that were only skipped over are closed instead.
      */
     public FrameView renderFrame() {
-        touchStamp.set(System.currentTimeMillis());
         if (closed || be.clientUrl().isBlank() || !valid()) return null;
 
         DecodedFrame frame = null;
@@ -907,15 +925,16 @@ public final class PlaybackSession {
     // =============================== per-tick ===============================
 
     public void tick() {
-        touchStamp.set(System.currentTimeMillis());
         if (closed) return;
         if (!valid()) {
             close("world no longer has this screen");
             return;
         }
 
+        gamePaused = Minecraft.getInstance().isPaused();
+
         double media = mediaSeconds();
-        clockMoving = !be.clientFrozen() && media != previousMediaSeconds;
+        clockMoving = !be.clientFrozen() && !gamePaused && media != previousMediaSeconds;
         previousMediaSeconds = media;
 
         if (duration > 0.0
@@ -1108,10 +1127,6 @@ public final class PlaybackSession {
     }
 
     // =============================== status ===============================
-
-    public long touchedAt() {
-        return touchStamp.get();
-    }
 
     public String errorMessage() {
         return errorMessage;
