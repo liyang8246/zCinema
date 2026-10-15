@@ -1,6 +1,0 @@
-{
-  "textures": {
-    "layer0": "zcinema:item/emoji_star_struck"
-  },
-  "parent": "minecraft:item/generated"
-}

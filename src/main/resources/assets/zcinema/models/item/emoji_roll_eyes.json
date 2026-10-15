@@ -1,6 +1,0 @@
-{
-  "textures": {
-    "layer0": "zcinema:item/emoji_roll_eyes"
-  },
-  "parent": "minecraft:item/generated"
-}

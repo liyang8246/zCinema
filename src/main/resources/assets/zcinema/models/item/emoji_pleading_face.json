@@ -1,6 +1,0 @@
-{
-  "textures": {
-    "layer0": "zcinema:item/emoji_pleading_face"
-  },
-  "parent": "minecraft:item/generated"
-}

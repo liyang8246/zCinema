@@ -1,0 +1,256 @@
+import me.modmuss50.mpp.platforms.curseforge.AdditionalFileOptions
+import me.modmuss50.mpp.platforms.curseforge.Curseforge
+import me.modmuss50.mpp.platforms.modrinth.Modrinth
+
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'com.google.osdetector'
+    id 'me.modmuss50.mod-publish-plugin'
+}
+
+def MT_TOKEN = System.getenv("MODRINTH_TOKEN")
+def CF_TOKEN = System.getenv("CURSEFORGE_TOKEN")
+
+base {
+    archivesName = id
+}
+
+test {
+    useJUnitPlatform()
+    maxHeapSize = test_max_heap
+    jvmArgs "-XX:MaxDirectMemorySize=$test_max_direct_memory"
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17
+}
+
+sourcesJar {
+    exclude("org/watermedia/binaries/**") // COMPILED HERE FOR THE CODEPENDENCY; SHIPPED BY THE BINARIES JAR
+}
+
+println("Gradle Java: ${JavaVersion.current()}")
+println("Building project: ${properties.libname}")
+println("Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}, Encoding: ${System.getProperty "file.encoding"}")
+
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+    maven { url "https://repo.spongepowered.org/maven" }
+}
+
+configurations {
+    include
+    include.extendsFrom(implementation)
+    library
+
+    // WATERMEDIA IS THE PROVIDER FOR THE CODEPENDENT BINARIES BUILD: EXPOSE THE PROVIDED LIBS
+    // (log4j, gson, modloaders, ...) AS COMPILE-ONLY API SO BINARIES COMPILES AGAINST THEM
+    // TRANSITIVELY WITHOUT REDECLARING THEM, AND WITHOUT LEAKING THEM INTO THE PUBLISHED POM.
+    compileOnlyApi.extendsFrom(library)
+}
+
+sourceSets {
+    // CODEPENDENT MODULES: BINARIES USES WATERMEDIA (NetRequest) AND WATERMEDIA USES BINARIES
+    // (WaterMediaBinaries), SO BOTH COMPILE TOGETHER HERE; THE CLASSES SHIP ONLY IN THE BINARIES JAR
+    main.java.srcDirs += "binaries/src/main/java"
+
+    // SHADOW
+    main.compileClasspath += configurations.include
+    main.runtimeClasspath += configurations.include
+    test.compileClasspath += configurations.include
+    test.runtimeClasspath += configurations.include
+
+    // LIBRARY
+    main.compileClasspath += configurations.library
+    main.runtimeClasspath += configurations.library
+    test.compileClasspath += configurations.library
+    test.runtimeClasspath += configurations.library
+
+    // BINARIES RESOURCES (FFMPEG ZIPS) SHIP ONLY IN THE BINARIES JAR; PUT THEM ON THE MAIN + TEST
+    // RUNTIME CLASSPATHS SO THE DEV APP RUN AND MediaBootstrap-GATED TESTS EXTRACT AND LOAD FFMPEG
+    // LIKE PRODUCTION DOES (main DOES NOT PROPAGATE TO test: THEY ARE INDEPENDENT FILE COLLECTIONS)
+    main.runtimeClasspath += files("binaries/src/main/resources")
+    test.runtimeClasspath += files("binaries/src/main/resources")
+}
+
+// HOST JAVAFX CLASSIFIER FOR THE COMPILE-ONLY JFXEngine (win/linux/mac + aarch64 variants)
+def javafxPlatform = { ->
+    if (osdetector.os == 'windows') return osdetector.arch == 'x86_32' ? 'win-x86' : 'win'
+    if (osdetector.os == 'osx') return osdetector.arch == 'aarch_64' ? 'mac-aarch64' : 'mac'
+    return osdetector.arch == 'aarch_64' ? 'linux-aarch64' : 'linux'
+}()
+
+dependencies {
+    // BINARIES SOURCES DEPENDENCY (SHADED INTO THE BINARIES JAR, NOT THIS ONE)
+    library "org.tukaani:xz:$xz_version"
+
+    // DEPENDENCIES
+    include "org.bytedeco:ffmpeg:$ffmpeg_version"
+    include ("com.github.SrRapero720:waterconfig:$waterconfig_version") { // TODO: do not shade
+        transitive = false
+    }
+
+    // DEPENDENCIES INCLUDED IN MINECRAFT
+    library "com.github.WaterMediaTeam:modloaders:$loaders_version"
+    library "com.google.code.gson:gson:$gson_version"
+
+    library "org.apache.logging.log4j:log4j-api:$log4j_version"
+    library "org.apache.logging.log4j:log4j-core:$log4j_version"
+
+    library "org.lwjgl:lwjgl-opengl:$opengl_version"
+    library "org.lwjgl:lwjgl-glfw:$opengl_version"
+    library "org.lwjgl:lwjgl-stb:$opengl_version"
+    library "org.lwjgl:lwjgl-openal:$openal_version"
+    library "org.lwjgl:lwjgl-vulkan:$vulkan_version"
+    library "org.lwjgl:lwjgl-shaderc:$vulkan_version"
+    library "org.joml:joml:$joml_version"
+
+    // JAVAFX — COMPILE-ONLY FOR JFXEngine; NOT BUNDLED, THE CONSUMING JAVAFX APP SUPPLIES ITS RUNTIME.
+    // THE JAVA CLASSES ARE IDENTICAL ACROSS PLATFORM-CLASSIFIED JARS, SO THE HOST CLASSIFIER IS FINE.
+    library "org.openjfx:javafx-base:$javafx_version:$javafxPlatform"
+    library "org.openjfx:javafx-graphics:$javafx_version:$javafxPlatform"
+    // javafx-swing PROVIDES JFXPanel — THE JAVAFX POPUP EMBEDS ITS SCENE IN A SWING FRAME (EDT-DRIVEN),
+    // WHICH RENDERS RELIABLY IN THE GLFW-HOSTED APP UNLIKE A STANDALONE Stage. CONTROLS ARE SWING, SO NO javafx-controls.
+    library "org.openjfx:javafx-swing:$javafx_version:$javafxPlatform"
+
+    // TEST DEPENDENCIES
+    testImplementation(platform("org.junit:junit-bom:$junit_version"))
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    testRuntimeOnly "org.lwjgl:lwjgl:$opengl_version:natives-$osdetector.os"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengl:$opengl_version:natives-$osdetector.os"
+    testRuntimeOnly "org.lwjgl:lwjgl-glfw:$opengl_version:natives-$osdetector.os"
+    testRuntimeOnly "org.lwjgl:lwjgl-openal:$openal_version:natives-$osdetector.os"
+
+    // VULKAN: BINDINGS SHIP FOR EVERY PLATFORM, BUT NATIVES ONLY EXIST FOR MACOS (BUNDLED MOLTENVK).
+    // ON WINDOWS/LINUX THE VULKAN LOADER COMES FROM THE GPU DRIVER, SO THERE IS NO NATIVES JAR TO PULL.
+    if (osdetector.os == 'osx') {
+        testRuntimeOnly "org.lwjgl:lwjgl-vulkan:$vulkan_version:natives-macos${osdetector.arch == 'aarch_64' ? '-arm64' : ''}"
+    }
+    // SHADERC COMPILES GLSL -> SPIR-V AT RUNTIME (VKEngine/Vulkan SHADERS); IT SHIPS NATIVES FOR EVERY PLATFORM
+    testRuntimeOnly "org.lwjgl:lwjgl-shaderc:$vulkan_version:natives-$osdetector.os"
+}
+
+// Process target resources with mod info
+processResources {
+    outputs.upToDateWhen { false }
+    filesMatching(['META-INF/mods.toml', 'META-INF/neoforge.mods.toml', 'pack.mcmeta', 'fabric.mod.json']) {
+        expand(project.properties)
+    }
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.WARN
+
+    manifest {
+        attributes "id"                         : id
+        attributes "version"                    : version
+        attributes "Specification-Title"        : id
+        attributes "Specification-Vendor"       : authors
+        attributes "Specification-Version"      : version
+        attributes "Implementation-Title"       : id
+        attributes "Implementation-Version"     : version
+        attributes "Implementation-Vendor"      : authors
+        attributes "Implementation-Timestamp"   : new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        attributes "Main-Class": mainclass
+    }
+    from {
+        configurations.include.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude('META-INF/versions/', 'META-INF/maven/')
+    exclude('org/watermedia/binaries/**') // COMPILED HERE FOR THE CODEPENDENCY; SHIPPED BY THE BINARIES JAR
+
+    filesMatching('META-INF/*') {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE // COMBINE FILES
+    }
+}
+
+// PUBLISH METADATA PARSED FROM gradle.properties
+def mcVers = minecraftversions.split(',').collect { it.trim() }
+def javaVers = javaversions.split(',').collect { JavaVersion.toVersion(it.trim()) }
+def loaders = modloaders.split(',').collect { it.trim() }
+// INSIDE publishMods THE DELEGATE IS THE EXTENSION, SO A BARE `version` HITS ITS Property<String> AND
+// STRINGIFIES TO "extension 'publishMods' property 'version'"; READ THE PROJECT VERSION OUT HERE INSTEAD
+def publishVersion = project.version.toString()
+
+// PLATFORMS ARE CONFIGURED THROUGH THE TYPED Action OVERLOAD AND AN EXPLICIT RECEIVER: THE PLUGIN ALSO
+// EXPOSES KOTLIN Closure OVERLOADS THAT THE GROOVY IDE INSPECTION CANNOT RESOLVE, WHICH FLAGS THE WHOLE
+// BLOCK AND LEAVES IT WITHOUT A DELEGATE (NO COMPLETION); IT ALSO KILLS THE SHADOWING ABOVE FOR GOOD
+publishMods {
+    file = jar.archiveFile
+    changelog = getChangelogText()
+    type = ["alpha": ALPHA, "beta": BETA, "release": STABLE].getOrDefault(project.versiontype.toString().toLowerCase(), ALPHA)
+    displayName = publishVersion
+    modLoaders.addAll(loaders)
+
+    additionalFiles.from(sourcesJar.archiveFile)
+    maxRetries = 2
+
+    dryRun = false
+
+    curseforge({ Curseforge cf ->
+        cf.accessToken = CF_TOKEN
+        cf.projectId = curseforgeid
+        cf.minecraftVersions.addAll(mcVers)
+        cf.javaVersions.addAll(javaVers)
+        cf.clientRequired = true
+        cf.serverRequired = true
+        cf.projectSlug = id
+        cf.additionalFile(sourcesJar, { AdditionalFileOptions file ->
+            file.name = "$publishVersion-sources"
+        } as Action<AdditionalFileOptions>)
+        cf.requires("watermedia-binaries")
+        // THE CURSEFORGE UPLOAD API HAS NO ENDPOINT TO EDIT THE PROJECT PAGE DESCRIPTION; SYNC IS MODRINTH-ONLY
+    } as Action<Curseforge>)
+
+    modrinth({ Modrinth mr ->
+        mr.accessToken = MT_TOKEN
+        mr.projectId = modrinthid
+        mr.minecraftVersions.addAll(mcVers)
+        mr.requires("watermedia-binaries")
+        mr.projectDescription = providers.fileContents(layout.projectDirectory.file("README.md")).asText
+    } as Action<Modrinth>)
+}
+
+// KEEP `build` ASSEMBLING BOTH CODEPENDENT JARS, AS IT DID WHEN BINARIES WAS A DIRECT DEPENDENCY
+build.dependsOn gradle.includedBuild("binaries").task(":build")
+
+// NORMALIZE ENHANCED-FOR COLONS IN JAVA SOURCES: "for (T x : xs)" -> "for (T x: xs)"
+// (GRADLE PORT OF THE OLD scripts/remove_semicolon_space.ps1)
+tasks.register('removeSemicolonSpace') {
+    group = 'formatting'
+    description = 'Removes the space before the enhanced-for colon across src/**/*.java'
+    doLast {
+        // (?m) ANCHORS ^ PER LINE; [ \t] AND [^:\r\n] KEEP EACH MATCH INSIDE ONE LINE SO LINE ENDINGS SURVIVE
+        def regex = ~/(?m)(^[ \t]*for[ \t]*\([^:\r\n]*\w)[ \t]+:/
+        fileTree(dir: 'src', include: '**/*.java').each { file ->
+            def text = file.getText('UTF-8')
+            def updated = text.replaceAll(regex, '$1:')
+            if (updated == text) return
+
+            def before = text.readLines()
+            def after = updated.readLines()
+            before.eachWithIndex { line, i ->
+                if (after[i] != line) {
+                    println "${file.path}:${i + 1}"
+                    println "  - ${line.stripLeading()}"
+                    println "  + ${after[i].stripLeading()}"
+                }
+            }
+            file.write(updated, 'UTF-8')
+        }
+        println 'Done.'
+    }
+}
+
+def getChangelogText() {
+    return file('CHANGELOG.md').readLines('UTF-8').takeWhile { !it.isEmpty() }.join('\n')
+}

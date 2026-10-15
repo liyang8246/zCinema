@@ -1,6 +1,0 @@
-{
-  "textures": {
-    "layer0": "zcinema:item/emoji_kissing_heart"
-  },
-  "parent": "minecraft:item/generated"
-}

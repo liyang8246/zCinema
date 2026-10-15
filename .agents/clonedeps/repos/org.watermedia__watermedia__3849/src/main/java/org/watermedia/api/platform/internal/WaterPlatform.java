@@ -1,0 +1,61 @@
+package org.watermedia.api.platform.internal;
+
+import org.watermedia.WaterMedia;
+import org.watermedia.api.network.NetworkAPI;
+import org.watermedia.api.platform.*;
+import org.watermedia.api.util.MediaType;
+import org.watermedia.api.util.RequestHeaders;
+
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Path;
+import java.util.List;
+
+public final class WaterPlatform implements IPlatform {
+    public static final String NAME = "WaterMedia Internal";
+    public static final String HOST_LOCAL = "local";
+    public static final String HOST_REMOTE = "remote";
+    public static final String HOST_GLOBAL = "global";
+
+    public static final String GLOBAL_SERVER = "https://watermedia.srrapero720.me/";
+
+    @Override
+    public String name() {
+        return NAME;
+    }
+
+    @Override
+    public PlatformData getData(final URI uri) throws Exception {
+        if (!"water".equals(uri.getScheme())) return null;
+
+        final String resolved = toHttpURL(uri);
+        final URI resolvedUri = new URI(resolved);
+        final var entry = new DataSource(MediaType.UNKNOWN, null, null,
+                RequestHeaders.defaults(uri),
+                List.of(new DataQuality(resolvedUri, 0, 0)),
+                null, null);
+        return new PlatformData(null, entry);
+    }
+
+    public static String toHttpURL(final URI u) throws IOException {
+        final String host = u.getHost();
+        String path = u.getPath();
+
+        if (host == null) throw new PlatformException(WaterPlatform.class, "water:// URL requires a host (local, remote, global)");
+
+        return switch (host) {
+            case HOST_LOCAL -> {
+                if (path.startsWith("/")) path = path.substring(1);
+                final Path file = WaterMedia.cwd().resolve(path);
+                yield file.toUri().toString();
+            }
+            // NetworkAPI.remoteHost() VALIDATES THE CONFIG UP FRONT AND STRIPS THE TRAILING SLASH
+            case HOST_REMOTE -> NetworkAPI.remoteHost() + path;
+            case HOST_GLOBAL -> {
+                if (path.startsWith("/")) path = path.substring(1);
+                yield GLOBAL_SERVER + path;
+            }
+            default -> throw new PlatformException(WaterPlatform.class, "Unknown water:// host: " + host + " (expected: local, remote, global)");
+        };
+    }
+}

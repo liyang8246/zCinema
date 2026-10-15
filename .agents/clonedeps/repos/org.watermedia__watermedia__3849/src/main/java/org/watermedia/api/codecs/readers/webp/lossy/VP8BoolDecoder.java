@@ -1,0 +1,119 @@
+package org.watermedia.api.codecs.readers.webp.lossy;
+
+import org.watermedia.api.codecs.XCodecException;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+import static org.watermedia.WaterMedia.LOGGER;
+import static org.watermedia.api.codecs.readers.webp.lossy.VP8LossyDecoder.IT;
+
+// RFC6386 SECTION 7 - BOOLEAN ENTROPY DECODER
+// MAINTAINS 'VALUE' AND 'RANGE' TO TRACK CURRENT POSITION IN ARITHMETIC CODING INTERVAL
+// KEY CONSTRAINTS: 128 <= RANGE <= 255, VALUE CONTAINS AT LEAST 8 SIGNIFICANT BITS
+final class VP8BoolDecoder {
+    // BYTES THE DECODER MAY FABRICATE PAST THE END OF ITS PARTITION BEFORE THE STREAM IS DECLARED
+    // TRUNCATED. THE RENORMALIZER RUNS UP TO TWO BYTES AHEAD OF THE BITS IT HAS ACTUALLY USED AND
+    // ENCODERS FLUSH WITH A SHORT ZERO TAIL, SO A FEW PHANTOM BYTES ARE NORMAL AT THE VERY END OF A
+    // VALID PARTITION — A FRAME'S WORTH OF THEM IS NOT
+    private static final int MAX_PAD_BYTES = 16;
+
+    private final ByteBuffer buf;
+    private int range;    // ALWAYS 128-255 PER RFC6386 7.2
+    private int val;      // CURRENT CODED VALUE
+    private int bitCnt;   // NUMBER OF BITS SHIFTED OUT, MAX 7
+    private int padBytes; // IMPLICIT ZERO BYTES CONSUMED PAST THE PARTITION END
+    private boolean eof;  // SET ONCE padBytes EXCEEDS THE TOLERATED FLUSH TAIL
+
+    // RFC6386 SECTION 7.3 - DECODER INITIALIZATION
+    // READS FIRST TWO BYTES TO INITIALIZE VALUE, SETS RANGE = 255
+    VP8BoolDecoder(final ByteBuffer buffer) throws XCodecException {
+        this.buf = buffer.slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        if (this.buf.remaining() < 2) {
+            throw new XCodecException("VP8 bool decoder buffer too small");
+        }
+
+        // INIT: VALUE = FIRST 2 INPUT BYTES (BIG-ENDIAN ORDER)
+        this.val = (this.buf.get() & 0xFF) << 8;
+        this.val |= (this.buf.get() & 0xFF);
+        this.range = 255;  // INITIAL RANGE IS FULL
+        this.bitCnt = 0;   // NO BITS SHIFTED OUT YET
+
+        LOGGER.trace(IT, "Init: val=0x{}, range={}", Integer.toHexString(this.val), this.range);
+    }
+
+    // RFC6386 SECTION 7.3 - READ_BOOL IMPLEMENTATION
+    // PROB: 0-255 WHERE PROB IS P(FALSE)*256
+    // SPLIT = 1 + (((RANGE - 1) * PROB) >> 8)
+    // COMPARE VALUE TO SPLIT << 8 TO DETERMINE BIT
+    boolean readBool(final int prob) throws XCodecException {
+        // CALCULATE SPLIT POINT PER RFC6386 EQ 7.1
+        final int split = 1 + (((this.range - 1) * prob) >> 8);
+        final int bigSplit = split << 8;
+
+        int r;
+        int v = this.val;
+        final boolean bit;
+        if (v >= bigSplit) {
+            bit = true;
+            r = this.range - split;
+            v -= bigSplit;
+        } else {
+            bit = false;
+            r = split;
+        }
+
+        // RENORMALIZE: BATCH THE SHIFT INSTEAD OF LOOPING ONE BIT AT A TIME.
+        // shift = number of left shifts needed so that range >= 128.
+        if (r < 128) {
+            final int shift = Integer.numberOfLeadingZeros(r) - 24;
+            r <<= shift;
+            v <<= shift;
+            int bc = this.bitCnt + shift;
+            // bc can be at most 7 + 7 = 14, so at most one byte refill is needed.
+            if (bc >= 8) {
+                bc -= 8;
+                if (this.buf.hasRemaining()) {
+                    v |= (this.buf.get() & 0xFF) << bc;
+                } else if (++this.padBytes > MAX_PAD_BYTES) {
+                    // NOTHING LEFT TO READ: EVERY FURTHER BIT IS INVENTED, NOT DECODED. WITHOUT THIS
+                    // FLAG A 2-BYTE PARTITION "DECODES" A FULL 64-MEGAPIXEL FRAME OUT OF ZEROS
+                    // (libwebp CVE-2018-25009 / 25010 / 25012 / 25014)
+                    this.eof = true;
+                }
+            }
+            this.bitCnt = bc;
+        }
+        this.range = r;
+        this.val = v;
+        return bit;
+    }
+
+    // TRUE ONCE THE DECODER HAS RUN PAST ITS PARTITION BY MORE THAN A FLUSH TAIL
+    boolean eof() {
+        return this.eof;
+    }
+
+    // RFC6386 SECTION 7.3 - 50% PROBABILITY BOOL (FLAG)
+    boolean readBool() throws XCodecException {
+        return this.readBool(128);
+    }
+
+    // RFC6386 SECTION 8 - READ N-BIT UNSIGNED LITERAL (MSB FIRST)
+    // L(N) IN RFC NOTATION
+    int readLit(final int n) throws XCodecException {
+        int r = 0;
+        for (int i = 0; i < n; i++) {
+            r = (r << 1) | (this.readBool() ? 1 : 0);
+        }
+        return r;
+    }
+
+    // RFC6386 SECTION 8 - READ SIGNED LITERAL
+    // MAGNITUDE FIRST, THEN SIGN BIT (1 = NEGATIVE)
+    int readSigned(final int n) throws XCodecException {
+        final int mag = this.readLit(n);
+        return this.readBool() ? -mag : mag;
+    }
+}

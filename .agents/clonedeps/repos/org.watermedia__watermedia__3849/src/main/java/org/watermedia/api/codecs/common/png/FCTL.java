@@ -1,0 +1,128 @@
+package org.watermedia.api.codecs.common.png;
+
+import org.watermedia.api.codecs.XCodecException;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+/**
+ * fcTL - Frame Control Chunk
+ * Contains information about each frame in an APNG animation
+ *
+ * @see <a href="https://www.w3.org/TR/png-3/#fcTL-chunk">PNG Specification - fcTL</a>
+ */
+public record FCTL(int seq, int width, int height, int xOffset, int yOffset,
+                   short delay, short delay_den, byte dispose, byte blend) {
+
+    public static final int SIGNATURE = 0x66_63_54_4C; // "fcTL"
+    public static final int LENGTH = 26;               // FIXED LENGTH OF fcTL DATA
+
+    // DISPOSE OPERATIONS
+    public static final byte DISPOSE_OP_NONE = 0;       // LEAVE OUTPUT BUFFER AS IS
+    public static final byte DISPOSE_OP_BACKGROUND = 1; // CLEAR OUTPUT BUFFER TO FULLY TRANSPARENT BLACK
+    public static final byte DISPOSE_OP_PREVIOUS = 2;   // RESTORE OUTPUT BUFFER TO PREVIOUS CONTENT
+
+    // BLEND OPERATIONS
+    public static final byte BLEND_OP_SOURCE = 0;       // REPLACE ALL COMPONENTS INCLUDING ALPHA
+    public static final byte BLEND_OP_OVER = 1;         // ALPHA COMPOSITE (PORTER-DUFF "OVER")
+
+    /**
+     * Reads fcTL chunk from buffer (legacy method, reads length/type from buffer)
+     */
+    public static FCTL read(final ByteBuffer buffer) throws XCodecException {
+        // CHUNK HEADER: LENGTH (4 BYTES), TYPE (4 BYTES)
+        if (buffer.remaining() < 8) throw new XCodecException("Truncated fcTL chunk header");
+        final int length = buffer.getInt();
+        final int type = buffer.getInt();
+
+        // TYPE AND LENGTH COME STRAIGHT OFF THE WIRE HERE, SO BOTH ARE ATTACKER DATA (UNLIKE convert)
+        if (type != SIGNATURE)
+            throw new XCodecException("Invalid chunk type for fcTL: 0x" + Integer.toHexString(type));
+        if (length != LENGTH)
+            throw new XCodecException("fcTL chunk length must be 26, got " + Integer.toUnsignedString(length));
+        if (buffer.remaining() < LENGTH) throw new XCodecException("Truncated fcTL chunk");
+
+        return new FCTL(
+                buffer.getInt(),     // SEQUENCE NUMBER
+                buffer.getInt(),     // WIDTH
+                buffer.getInt(),     // HEIGHT
+                buffer.getInt(),     // X OFFSET
+                buffer.getInt(),     // Y OFFSET
+                buffer.getShort(),   // DELAY NUMERATOR
+                buffer.getShort(),   // DELAY DENOMINATOR
+                buffer.get(),        // DISPOSE OP
+                buffer.get()         // BLEND OP
+        );
+    }
+
+    /**
+     * Converts a generic CHUNK to FCTL
+     */
+    public static FCTL convert(final CHUNK chunk, final ByteOrder order) throws XCodecException {
+        if (chunk.type() != SIGNATURE) {
+            throw new IllegalArgumentException("Invalid chunk type for fcTL: 0x" + Integer.toHexString(chunk.type()));
+        }
+
+        final byte[] data = chunk.data();
+        if (data.length != LENGTH) {
+            throw new XCodecException("fcTL data must be 26 bytes, got " + data.length);
+        }
+
+        final ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN);
+        return new FCTL(
+                buffer.getInt(),     // SEQUENCE NUMBER (4 BYTES)
+                buffer.getInt(),     // WIDTH (4 BYTES)
+                buffer.getInt(),     // HEIGHT (4 BYTES)
+                buffer.getInt(),     // X OFFSET (4 BYTES)
+                buffer.getInt(),     // Y OFFSET (4 BYTES)
+                buffer.getShort(),   // DELAY NUMERATOR (2 BYTES)
+                buffer.getShort(),   // DELAY DENOMINATOR (2 BYTES)
+                buffer.get(),        // DISPOSE OP (1 BYTE)
+                buffer.get()         // BLEND OP (1 BYTE)
+        );
+    }
+
+    /**
+     * Returns the frame delay in milliseconds
+     */
+    public int delayMillis() {
+        final int num = this.delay & 0xFFFF;
+        int den = this.delay_den & 0xFFFF;
+        if (den == 0) den = 100; // DEFAULT TO 100 IF 0
+        return (num * 1000) / den;
+    }
+
+    /**
+     * Validates frame bounds against canvas dimensions
+     */
+    public void validate(final int canvasWidth, final int canvasHeight) throws XCodecException {
+        if (this.width <= 0 || this.height <= 0) {
+            throw new XCodecException("Invalid frame dimensions: " + this.width + "x" + this.height);
+        }
+        if (this.xOffset < 0 || this.yOffset < 0) {
+            throw new XCodecException("Invalid frame offset: " + this.xOffset + "," + this.yOffset);
+        }
+        // LONG MATH: RAW int FIELDS CAN SUM PAST Integer.MAX_VALUE AND WRAP NEGATIVE, FALSELY PASSING
+        if ((long) this.xOffset + this.width > canvasWidth || (long) this.yOffset + this.height > canvasHeight) {
+            throw new XCodecException("Frame extends beyond canvas bounds");
+        }
+    }
+
+    public byte[] toBytes() {
+        final ByteBuffer buf = ByteBuffer.allocate(LENGTH).order(ByteOrder.BIG_ENDIAN);
+        buf.putInt(this.seq);
+        buf.putInt(this.width);
+        buf.putInt(this.height);
+        buf.putInt(this.xOffset);
+        buf.putInt(this.yOffset);
+        buf.putShort(this.delay);
+        buf.putShort(this.delay_den);
+        buf.put(this.dispose);
+        buf.put(this.blend);
+        return buf.array();
+    }
+
+    public CHUNK toChunk() {
+        return CHUNK.create(SIGNATURE, this.toBytes());
+    }
+}

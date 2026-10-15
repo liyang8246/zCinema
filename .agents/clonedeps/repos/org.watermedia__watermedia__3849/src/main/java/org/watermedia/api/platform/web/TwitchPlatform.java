@@ -1,0 +1,633 @@
+package org.watermedia.api.platform.web;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.MarkerManager;
+import org.watermedia.WaterMediaConfig;
+import org.watermedia.api.platform.*;
+import org.watermedia.api.util.MediaType;
+import org.watermedia.api.util.Metadata;
+import org.watermedia.api.util.RequestHeaders;
+import org.watermedia.api.util.NetRequest;
+import org.watermedia.tools.DataTool;
+import org.watermedia.tools.JSONTool;
+import org.watermedia.tools.MPEGTool;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.watermedia.WaterMedia.LOGGER;
+import static org.watermedia.tools.JSONTool.*;
+
+public final class TwitchPlatform implements IPlatform {
+    public static final String NAME = "Twitch";
+    private static final Marker IT = MarkerManager.getMarker(TwitchPlatform.class.getSimpleName());
+    // TWITCH GQL ENDPOINT AND USHER CDN URLS
+    private static final String GQL_URL = "https://gql.twitch.tv/gql";
+    private static final String LIVE_URL = "https://usher.ttvnw.net/api/channel/hls/%s.m3u8";
+    private static final String VOD_URL = "https://usher.ttvnw.net/vod/%s.m3u8";
+    private static final String CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+    // INLINE GQL QUERY FOR ACCESS TOKENS
+    private static final String ACCESS_TOKEN_QUERY =
+            "query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) {" +
+            "  streamPlaybackAccessToken(channelName: $login, params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: $playerType}) @include(if: $isLive) { value signature }" +
+            "  videoPlaybackAccessToken(id: $vodID, params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: $playerType}) @include(if: $isVod) { value signature }" +
+            "}";
+    // INLINE GQL SEARCH (NO PERSISTED HASH — THOSE ROTATE AND FAIL WITH PersistedQueryNotFound). ONLY THE
+    // userQuery/platform ARGS ARE REQUIRED. WE KEEP THE channels SECTION: STREAMS/CHANNELS ARE THE MOST
+    // USEFUL HITS AND CARRY BOTH A TITLE AND A THUMBNAIL (LIVE PREVIEW, ELSE PROFILE PICTURE).
+    private static final String SEARCH_QUERY =
+            "query Search($q: String!) { searchFor(userQuery: $q, platform: \"web\") {" +
+                    " channels { edges { item { ... on User {" +
+                    " login displayName profileImageURL(width: 300) broadcastSettings { title } stream { previewImageURL } } } } } } }";
+
+    // PERSISTED QUERY HASHES — ALIGNED WITH YT-DLP'S TWITCH EXTRACTOR
+    private static final String HASH_STREAM_METADATA = "ad022ca32220d5523d03a23cbcb5beaa1e0999889c1f8f78f9f2520dafb5cae6";
+    private static final String HASH_COMSCORE = "e1edae8122517d013405f237ffcc124515dc6ded82480a88daef69c83b53ac01";
+    private static final String HASH_VIDEO_PREVIEW = "9515480dee68a77e667cb19de634739d33f243572b007e98e67184b1a5d8369f";
+    private static final String HASH_VIDEO_METADATA = "45111672eea2e507f8ba44d101a61862f9c56b11dee09a15634cb75cb9b9084d";
+    private static final String HASH_CLIP = "0a02bb974443b576f5579aab0fef1d4b7f44e58a8a256f0c5adfead0db70640f";
+    private static final String HASH_CONTENT_CLASS = "57bb6c1aca3631b2b3e74b1c3c8adbecbbcc3becb70ec52d7c5ef0f90d7c3b02";
+
+    // SIGN POST FLAGGED BY TWITCH WHEN THE CONTENT CLASSIFICATION LABELS MARK A STREAM/VOD/CLIP AS MATURE
+    private static final String MATURE_SIGN_POST = "SIGN_POST_TYPE_MATURE";
+
+    // LIVE-PREVIEW URLS COME TEMPLATED WITH {width}x{height}; SUBSTITUTE A 16:9 THUMBNAIL SIZE
+    private static final String PREVIEW_WIDTH = "960";
+    private static final String PREVIEW_HEIGHT = "540";
+
+    private static final String[] HOSTS = {
+            "twitch.tv", "www.twitch.tv", "m.twitch.tv", "go.twitch.tv",
+            "player.twitch.tv", "clips.twitch.tv"
+    };
+
+    // /videos/{id}, /{user}/v/{id}, /{user}/video/{id}
+    private static final Pattern VOD_PATH = Pattern.compile("^/(?:[^/]+/v(?:ideo)?|videos)/(\\d+)");
+    // /{user}/clip/{slug}
+    private static final Pattern CLIP_PATH = Pattern.compile("^/(?:[^/]+/)?clip/([^/?#&]+)");
+    // /{channel}
+    private static final Pattern CHANNEL_PATH = Pattern.compile("^/([^/#?]+)/?$");
+
+    @Override
+    public String name() { return NAME; }
+
+    @Override
+    public PlatformData getData(final URI uri) throws Exception {
+        final String host = uri.getHost();
+        if (!DataTool.equalsAnyIgnoreCase(host, HOSTS)) return null;
+
+        final String path = uri.getPath();
+        final String query = uri.getQuery();
+
+        // CLIPS.TWITCH.TV/{SLUG} OR CLIPS.TWITCH.TV/EMBED?CLIP={SLUG}
+        if ("clips.twitch.tv".equalsIgnoreCase(host)) {
+            final String slug = parseClipsHost(path, query);
+            if (slug == null) throw new PlatformException(TwitchPlatform.class, "No clip slug found: " + uri);
+            return this.resolveClip(slug);
+        }
+
+        // PLAYER.TWITCH.TV/?VIDEO={ID} OR ?CHANNEL={NAME}
+        if ("player.twitch.tv".equalsIgnoreCase(host)) {
+            if (query != null) {
+                final String videoId = queryParam(query, "video");
+                if (videoId != null) return this.resolveVod(videoId.replaceFirst("^v", ""));
+                final String channel = queryParam(query, "channel");
+                if (channel != null) return this.resolveStream(channel.toLowerCase());
+            }
+            throw new PlatformException(TwitchPlatform.class, "Invalid player URL: " + uri);
+        }
+
+        if (path == null || path.length() <= 1) throw new PlatformException(TwitchPlatform.class, "Invalid URL: " + uri);
+
+        // VOD: /VIDEOS/{ID}, /{USER}/V/{ID}, /{USER}/VIDEO/{ID}
+        Matcher m = VOD_PATH.matcher(path);
+        if (m.find()) return this.resolveVod(m.group(1));
+
+        // SCHEDULE: ?VODID={ID}
+        if (query != null) {
+            final String vodId = queryParam(query, "vodID");
+            if (vodId != null) return this.resolveVod(vodId);
+        }
+
+        // CLIP: /{USER}/CLIP/{SLUG}
+        m = CLIP_PATH.matcher(path);
+        if (m.find()) return this.resolveClip(m.group(1));
+
+        // STREAM: /{CHANNEL}
+        m = CHANNEL_PATH.matcher(path);
+        if (m.find()) return this.resolveStream(m.group(1).toLowerCase());
+
+        throw new PlatformException(TwitchPlatform.class, "Unrecognized URL: " + uri);
+    }
+
+    @Override
+    public List<PlatformResult> search(final String query, final int limit) throws Exception {
+        final Map<String, Object> body = new HashMap<>(3);
+        body.put("operationName", "Search");
+        body.put("query", SEARCH_QUERY);
+        body.put("variables", Map.of("q", query));
+
+        final String response = this.gqlPost(body);
+        final JsonObject data = JsonParser.parseString(response).getAsJsonObject().getAsJsonObject("data");
+        if (data == null) return List.of();
+        final JsonObject searchFor = data.getAsJsonObject("searchFor");
+        if (searchFor == null) return List.of();
+        final JsonObject channels = searchFor.getAsJsonObject("channels");
+        final JsonArray edges = channels != null ? channels.getAsJsonArray("edges") : null;
+        if (edges == null) return List.of();
+
+        final List<PlatformResult> out = new ArrayList<>(Math.min(edges.size(), limit));
+        for (final JsonElement edgeEl: edges) {
+            if (out.size() >= limit) break;
+            final JsonElement itemEl = edgeEl.getAsJsonObject().get("item");
+            if (itemEl == null || itemEl.isJsonNull()) continue;
+            final JsonObject item = itemEl.getAsJsonObject();
+
+            final String login = str(item, "login");
+            if (login == null) continue; // CAN'T BUILD A PAGE URL WITHOUT THE CHANNEL LOGIN
+
+            // PREFER THE STREAM TITLE; FALL BACK TO THE CHANNEL NAME WHEN THE CHANNEL HAS NEVER SET ONE
+            String title = null;
+            final JsonElement settings = item.get("broadcastSettings");
+            if (settings != null && !settings.isJsonNull()) title = str(settings.getAsJsonObject(), "title");
+            if (title == null) title = str(item, "displayName");
+
+            // LIVE CHANNELS EXPOSE A STREAM PREVIEW (TEMPLATED); OFFLINE ONES FALL BACK TO THE PROFILE PICTURE
+            URI thumbnail = null;
+            final JsonElement stream = item.get("stream");
+            if (stream != null && !stream.isJsonNull()) {
+                final String preview = str(stream.getAsJsonObject(), "previewImageURL");
+                if (preview != null)
+                    thumbnail = JSONTool.uri(preview.replace("{width}", PREVIEW_WIDTH).replace("{height}", PREVIEW_HEIGHT));
+            }
+            if (thumbnail == null) {
+                final String profile = str(item, "profileImageURL");
+                if (profile != null) thumbnail = JSONTool.uri(profile);
+            }
+
+            out.add(new PlatformResult(NAME, title, thumbnail, URI.create("https://www.twitch.tv/" + login)));
+        }
+        return out;
+    }
+
+    // --- CONTENT-TYPE HANDLERS ---
+
+    private PlatformData resolveStream(final String channel) throws Exception {
+        this.ensureNotMature(ContentKind.STREAM, channel);
+
+        // RESOLVE METADATA FIRST: ITS StreamMetadata QUERY ALSO REPORTS WHETHER THE CHANNEL IS LIVE
+        // (user.stream IS A Stream OBJECT WHEN LIVE, null WHEN OFFLINE — VERIFIED AGAINST THE GQL API).
+        Metadata metadata = null;
+        URI thumbnail = null;
+        boolean apiAnswered = false;
+        boolean online = false;
+        try {
+            final MetadataWithThumbnail mwt = this.fetchStreamMetadata(channel);
+            if (mwt != null) {
+                metadata = mwt.metadata;
+                thumbnail = mwt.thumbnail;
+                online = mwt.online;
+                apiAnswered = true;
+            }
+        } catch (final Exception e) {
+            LOGGER.warn(IT, "Twitch failed to fetch stream metadata for '{}': {}", channel, e.getMessage());
+        }
+
+        // ONLY THE API CAN DECLARE A STREAM OFFLINE → CLEAR ERROR, NO POINT HITTING USHER.
+        // IF THE API DID NOT ANSWER WE DON'T SECOND-GUESS IT: WE JUST RESOLVE RESILIENTLY BELOW
+        // AND LET PLAYBACK FAIL ON ITS OWN IF THE STREAM TURNS OUT NOT TO WORK.
+        if (apiAnswered && !online)
+            throw new PlatformException(TwitchPlatform.class, "Streamer '" + channel + "' is offline");
+
+        final List<DataQuality> variants = this.fetchHlsVariants(channel, false);
+
+        if (metadata == null) LOGGER.warn(IT, "Twitch stream '{}' resolved without metadata", channel);
+        LOGGER.info(IT, "Twitch resolved stream '{}' with {} variant(s)", channel, variants.size());
+        return new PlatformData(Instant.now().plus(30, ChronoUnit.MINUTES),
+                new DataSource(MediaType.VIDEO, thumbnail, metadata,
+                        RequestHeaders.defaults(URI.create("https://www.twitch.tv/")),
+                        variants, null, null));
+    }
+
+    private PlatformData resolveVod(final String vodId) throws Exception {
+        this.ensureNotMature(ContentKind.VOD, vodId);
+        final List<DataQuality> variants = this.fetchHlsVariants(vodId, true);
+
+        Metadata metadata = null;
+        URI thumbnail = null;
+        try {
+            final MetadataWithThumbnail mwt = this.fetchVodMetadata(vodId);
+            if (mwt != null) { metadata = mwt.metadata; thumbnail = mwt.thumbnail; }
+        } catch (final Exception e) {
+            LOGGER.warn(IT, "Twitch failed to fetch VOD metadata for '{}': {}", vodId, e.getMessage());
+        }
+
+        if (metadata == null) LOGGER.warn(IT, "Twitch VOD '{}' resolved without metadata", vodId);
+        LOGGER.info(IT, "Twitch resolved VOD '{}' with {} variant(s)", vodId, variants.size());
+        return new PlatformData(Instant.now().plus(30, ChronoUnit.MINUTES),
+                new DataSource(MediaType.VIDEO, thumbnail, metadata,
+                        RequestHeaders.defaults(URI.create("https://www.twitch.tv/")),
+                        variants, null, null));
+    }
+
+    private PlatformData resolveClip(final String slug) throws Exception {
+        this.ensureNotMature(ContentKind.CLIP, slug);
+        final JsonObject clip = this.fetchClipData(slug);
+        if (clip == null) throw new PlatformException(TwitchPlatform.class, "Clip not found or no longer available: " + slug);
+
+        final JsonObject accessToken = clip.getAsJsonObject("playbackAccessToken");
+        if (accessToken == null) throw new PlatformException(TwitchPlatform.class, "No access token for clip: " + slug);
+
+        final String sig = accessToken.get("signature").getAsString();
+        final String token = accessToken.get("value").getAsString();
+        final String accessQuery = "sig=" + URLEncoder.encode(sig, StandardCharsets.UTF_8)
+                + "&token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+
+        final List<DataQuality> clipVariants = new ArrayList<>();
+
+        final JsonArray assets = clip.getAsJsonArray("assets");
+        if (assets != null && !assets.isEmpty()) {
+            final JsonObject asset = assets.get(0).getAsJsonObject();
+            final JsonArray videoQualities = asset.getAsJsonArray("videoQualities");
+            if (videoQualities != null) {
+                for (final JsonElement qe: videoQualities) {
+                    final JsonObject q = qe.getAsJsonObject();
+                    final String sourceUrl = str(q, "sourceURL");
+                    final int height = intOr(q, "quality", 0);
+                    if (sourceUrl != null && height > 0) {
+                        final String separator = sourceUrl.contains("?") ? "&" : "?";
+                        clipVariants.add(new DataQuality(
+                                URI.create(sourceUrl + separator + accessQuery),
+                                0, height));
+                    }
+                }
+            }
+        }
+
+        if (clipVariants.isEmpty()) throw new PlatformException(TwitchPlatform.class, "No video qualities found for clip: " + slug);
+
+        final String title = str(clip, "title");
+        // TWITCH REPORTS clip durationSeconds IN SECONDS; Metadata IS MILLISECONDS
+        final long durationMs = intOr(clip, "durationSeconds", 0) * 1000L;
+        String author = null;
+        final JsonElement broadcasterEl = clip.get("broadcaster");
+        if (broadcasterEl != null && !broadcasterEl.isJsonNull()) {
+            author = str(broadcasterEl.getAsJsonObject(), "displayName");
+        }
+
+        URI thumbnailUri = null;
+        if (!assets.isEmpty()) {
+            final String thumbUrl = str(assets.get(0).getAsJsonObject(), "thumbnailURL");
+            if (thumbUrl != null) thumbnailUri = URI.create(thumbUrl);
+        }
+
+        Instant publishedAt = null;
+        final String createdAt = str(clip, "createdAt");
+        if (createdAt != null) {
+            try { publishedAt = Instant.parse(createdAt); }
+            catch (final Exception ignored) {}
+        }
+
+        final Metadata clipMetadata = new Metadata(title, null, publishedAt, durationMs, author);
+        LOGGER.info(IT, "Twitch resolved clip '{}' with {} variant(s)", slug, clipVariants.size());
+        return new PlatformData(Instant.now().plus(30, ChronoUnit.MINUTES),
+                new DataSource(MediaType.VIDEO, thumbnailUri, clipMetadata,
+                        RequestHeaders.defaults(URI.create("https://www.twitch.tv/")),
+                        clipVariants, null, null));
+    }
+
+    // --- HLS FETCHING ---
+
+    // RESOLVES THE CHANNEL/VOD MASTER PLAYLIST TO DataQuality VARIANTS CARRYING THE REAL width/height OF
+    // EACH HLS RENDITION TAG. A NON-MASTER PLAYLIST (OR, FOR A LIVE STREAM, A FETCH HICCUP) FALLS BACK TO
+    // A SINGLE (0,0) VARIANT POINTING AT THE MASTER — MRL MARKS IT UNKNOWN, FFMediaPlayer UPGRADES IT.
+    // STREAMS RESOLVE RESILIENTLY (A USHER HICCUP MUST NOT BREAK A LIVE WATCH; OFFLINE IS REJECTED UPSTREAM);
+    // VODS RESOLVE STRICTLY SO A USHER 404 THROWS AS THE DELETED/UNAVAILABLE SIGNAL.
+    private List<DataQuality> fetchHlsVariants(final String id, final boolean isVod) throws IOException {
+        final URI master = URI.create(this.buildPlaylistUrl(id, isVod));
+
+        // VARIANT URLS COME BACK ALREADY ABSOLUTE (RESOLVED AGAINST THE MASTER BY MPEGTool)
+        final List<MPEGTool.Variant> variants;
+        if (!isVod) {
+            variants = MPEGTool.qualities(master);
+        } else {
+            final MPEGTool.Playlist playlist = MPEGTool.fetch(master);
+            variants = playlist instanceof final MPEGTool.Master m && !m.variants().isEmpty()
+                    ? m.variants()
+                    : List.of(MPEGTool.Variant.self(master));
+        }
+
+        final List<DataQuality> out = new ArrayList<>(variants.size());
+        for (final MPEGTool.Variant v: variants) {
+            out.add(new DataQuality(v.uri(), v.width(), v.height()));
+        }
+        LOGGER.debug(IT, "Twitch resolved {} HLS rendition(s) for {} '{}'", out.size(), isVod ? "VOD" : "stream", id);
+        return out;
+    }
+
+    private String buildPlaylistUrl(final String id, final boolean isVod) throws IOException {
+        final JsonObject token = this.fetchAccessToken(id, isVod);
+        final String signature = token.get("signature").getAsString();
+        final String encodedToken = URLEncoder.encode(token.get("value").getAsString(), StandardCharsets.UTF_8);
+        final long p = ThreadLocalRandom.current().nextLong(1_000_000, 10_000_001);
+        final String sessionId = UUID.randomUUID().toString().replace("-", "");
+
+        return String.format(isVod ? VOD_URL : LIVE_URL, id) +
+                "?allow_source=true&allow_audio_only=true&allow_spectre=true" +
+                "&p=" + p +
+                "&play_session_id=" + sessionId +
+                "&player=twitchweb&platform=web&player_backend=mediaplayer" +
+                "&playlist_include_framerate=true" +
+                "&supported_codecs=av1,h265,h264" +
+                "&sig=" + signature + "&token=" + encodedToken;
+    }
+
+    // --- ACCESS TOKEN ---
+
+    private JsonObject fetchAccessToken(final String id, final boolean isVod) throws IOException {
+        final Map<String, Object> variables = new HashMap<>();
+        variables.put("isLive", !isVod);
+        variables.put("isVod", isVod);
+        variables.put("login", isVod ? "" : id);
+        variables.put("vodID", isVod ? id : "");
+        variables.put("playerType", "site");
+
+        final Map<String, Object> body = new HashMap<>();
+        body.put("operationName", "PlaybackAccessToken_Template");
+        body.put("query", ACCESS_TOKEN_QUERY);
+        body.put("variables", variables);
+
+        final String response = this.gqlPost(body);
+        final JsonObject data = JsonParser.parseString(response).getAsJsonObject().getAsJsonObject("data");
+        if (data == null) throw new PlatformException(TwitchPlatform.class, "Access token response missing 'data' field");
+
+        final String tokenKey = isVod ? "videoPlaybackAccessToken" : "streamPlaybackAccessToken";
+        final JsonObject token = data.getAsJsonObject(tokenKey);
+        if (token == null) throw new PlatformException(TwitchPlatform.class, "Access token not found (key: " + tokenKey + ")");
+
+        return token;
+    }
+
+    // online IS STREAM-ONLY (user.stream != null); IT IS ALWAYS true FOR A RESOLVED VOD
+    private record MetadataWithThumbnail(Metadata metadata, URI thumbnail, boolean online) {}
+
+    // --- METADATA ---
+
+    private MetadataWithThumbnail fetchStreamMetadata(final String channel) {
+        try {
+            final List<Map<String, Object>> batch = new ArrayList<>(3);
+
+            final Map<String, Object> streamVars = new HashMap<>();
+            streamVars.put("channelLogin", channel);
+            streamVars.put("includeIsDJ", true);
+            batch.add(persistedQuery("StreamMetadata", HASH_STREAM_METADATA, streamVars));
+
+            final Map<String, Object> comscoreVars = new HashMap<>();
+            comscoreVars.put("channel", channel);
+            comscoreVars.put("clipSlug", "");
+            comscoreVars.put("isClip", false);
+            comscoreVars.put("isLive", true);
+            comscoreVars.put("isVodOrCollection", false);
+            comscoreVars.put("vodID", "");
+            batch.add(persistedQuery("ComscoreStreamingQuery", HASH_COMSCORE, comscoreVars));
+
+            final Map<String, Object> previewVars = new HashMap<>();
+            previewVars.put("login", channel);
+            batch.add(persistedQuery("VideoPreviewOverlay", HASH_VIDEO_PREVIEW, previewVars));
+
+            final String response = this.gqlPost(batch);
+            final JsonArray results = JsonParser.parseString(response).getAsJsonArray();
+
+            // STREAM METADATA — USER EXISTENCE + STREAM STATE
+            final JsonElement userEl = results.get(0).getAsJsonObject().getAsJsonObject("data").get("user");
+            if (userEl == null || userEl.isJsonNull()) return null;
+            final JsonObject user = userEl.getAsJsonObject();
+
+            final JsonElement streamEl = user.get("stream");
+            final JsonObject stream = (streamEl != null && !streamEl.isJsonNull()) ? streamEl.getAsJsonObject() : null;
+
+            Instant createdAt = null;
+            String streamType = null;
+            if (stream != null) {
+                streamType = str(stream, "type");
+                final String createdStr = str(stream, "createdAt");
+                if (createdStr != null) {
+                    try { createdAt = Instant.parse(createdStr); }
+                    catch (final Exception ignored) {}
+                }
+            }
+
+            // COMSCORE — TITLE + AUTHOR
+            String title = null;
+            String displayName = null;
+            if (results.size() > 1) {
+                final JsonElement sqUserEl = results.get(1).getAsJsonObject().getAsJsonObject("data").get("user");
+                if (sqUserEl != null && !sqUserEl.isJsonNull()) {
+                    final JsonObject sqUser = sqUserEl.getAsJsonObject();
+                    displayName = str(sqUser, "displayName");
+                    final JsonElement broadcastEl = sqUser.get("broadcastSettings");
+                    if (broadcastEl != null && !broadcastEl.isJsonNull()) {
+                        title = str(broadcastEl.getAsJsonObject(), "title");
+                    }
+                }
+            }
+
+            // VIDEO PREVIEW — STREAM THUMBNAIL (NOT PROFILE IMAGE)
+            URI thumbnailUri = null;
+            if (results.size() > 2) {
+                try {
+                    final JsonElement pvUserEl = results.get(2).getAsJsonObject().getAsJsonObject("data").get("user");
+                    if (pvUserEl != null && !pvUserEl.isJsonNull()) {
+                        final JsonElement pvStreamEl = pvUserEl.getAsJsonObject().get("stream");
+                        if (pvStreamEl != null && !pvStreamEl.isJsonNull()) {
+                            final String thumbUrl = str(pvStreamEl.getAsJsonObject(), "previewImageURL");
+                            if (thumbUrl != null) thumbnailUri = URI.create(thumbUrl);
+                        }
+                    }
+                } catch (final Exception ignored) {}
+            }
+
+            if ("rerun".equals(streamType) && title != null) {
+                title = title + " (rerun)";
+            }
+
+            return new MetadataWithThumbnail(new Metadata(title, null, createdAt, 0, displayName), thumbnailUri, stream != null);
+        } catch (final Exception e) {
+            LOGGER.warn(IT, "Twitch failed to fetch stream metadata for '{}': {}", channel, e.getMessage());
+            return null;
+        }
+    }
+
+    private MetadataWithThumbnail fetchVodMetadata(final String vodId) {
+        try {
+            final Map<String, Object> vars = new HashMap<>();
+            vars.put("channelLogin", "");
+            vars.put("videoID", vodId);
+
+            final List<Map<String, Object>> batch = List.of(
+                    persistedQuery("VideoMetadata", HASH_VIDEO_METADATA, vars)
+            );
+
+            final String response = this.gqlPost(batch);
+            final JsonArray results = JsonParser.parseString(response).getAsJsonArray();
+
+            final JsonElement videoEl = results.get(0).getAsJsonObject().getAsJsonObject("data").get("video");
+            if (videoEl == null || videoEl.isJsonNull()) return null;
+            final JsonObject video = videoEl.getAsJsonObject();
+
+            final String title = str(video, "title");
+            final String description = str(video, "description");
+            // TWITCH REPORTS VOD lengthSeconds IN SECONDS; Metadata IS MILLISECONDS
+            final long durationMs = intOr(video, "lengthSeconds", 0) * 1000L;
+
+            String author = null;
+            final JsonElement ownerEl = video.get("owner");
+            if (ownerEl != null && !ownerEl.isJsonNull()) {
+                author = str(ownerEl.getAsJsonObject(), "displayName");
+            }
+
+            URI thumbnailUri = null;
+            final String thumbUrl = str(video, "previewThumbnailURL");
+            if (thumbUrl != null) {
+                // FULL-SIZE THUMBNAIL: REPLACE DIMENSION PLACEHOLDER (E.G. 640x480.jpg → 0x0.jpg)
+                thumbnailUri = URI.create(thumbUrl.replaceAll("\\d+x\\d+(\\.\\w+)($|(?=[?#]))", "0x0$1$2"));
+            }
+
+            Instant publishedAt = null;
+            final String publishedStr = str(video, "postedAt");
+            if (publishedStr != null) {
+                try { publishedAt = Instant.parse(publishedStr); }
+                catch (final Exception ignored) {}
+            }
+
+            return new MetadataWithThumbnail(
+                    new Metadata(title != null ? title : "Untitled Broadcast", description, publishedAt, durationMs, author),
+                    thumbnailUri,
+                    true // VOD METADATA RESOLVED ⇒ AVAILABLE; online IS UNUSED FOR VODs
+            );
+        } catch (final Exception e) {
+            LOGGER.warn(IT, "Twitch failed to fetch VOD metadata for '{}': {}", vodId, e.getMessage());
+            return null;
+        }
+    }
+
+    // --- CLIP DATA ---
+
+    private JsonObject fetchClipData(final String slug) throws IOException {
+        final Map<String, Object> vars = new HashMap<>();
+        vars.put("slug", slug);
+
+        final List<Map<String, Object>> batch = List.of(
+                persistedQuery("ShareClipRenderStatus", HASH_CLIP, vars)
+        );
+
+        final String response = this.gqlPost(batch);
+        final JsonArray results = JsonParser.parseString(response).getAsJsonArray();
+        final JsonElement clipEl = results.get(0).getAsJsonObject().getAsJsonObject("data").get("clip");
+        return (clipEl != null && !clipEl.isJsonNull()) ? clipEl.getAsJsonObject() : null;
+    }
+
+    // --- MATURE CONTENT ---
+
+    private enum ContentKind { STREAM, VOD, CLIP }
+
+    // QUERIES TWITCH'S CONTENT CLASSIFICATION SIGN POST AND ABORTS WHEN THE CONTENT IS MATURE
+    // AND THE HOST DISABLED MATURE CONTENT. RUNS BEFORE ANY PLAYLIST/CLIP FETCH SO NO DATA IS RETRIEVED.
+    private void ensureNotMature(final ContentKind kind, final String id) throws IOException {
+        if (WaterMediaConfig.platforms.allowMatureContent) return;
+
+        final Map<String, Object> vars = new HashMap<>();
+        vars.put("login", kind == ContentKind.STREAM ? id : "");
+        vars.put("vodID", kind == ContentKind.VOD ? id : "");
+        vars.put("clipSlug", kind == ContentKind.CLIP ? id : "");
+        vars.put("isStream", kind == ContentKind.STREAM);
+        vars.put("isVOD", kind == ContentKind.VOD);
+        vars.put("isClip", kind == ContentKind.CLIP);
+
+        final String response = this.gqlPost(List.of(persistedQuery("ContentClassificationContext", HASH_CONTENT_CLASS, vars)));
+        final JsonObject data = JsonParser.parseString(response).getAsJsonArray().get(0).getAsJsonObject().getAsJsonObject("data");
+        if (data == null) return;
+
+        // STREAM NESTS UNDER user.stream; VOD UNDER video; CLIP UNDER clip
+        final JsonElement node = switch (kind) {
+            case STREAM -> {
+                final JsonElement user = data.get("user");
+                yield (user != null && !user.isJsonNull()) ? user.getAsJsonObject().get("stream") : null;
+            }
+            case VOD -> data.get("video");
+            case CLIP -> data.get("clip");
+        };
+        if (node == null || node.isJsonNull()) return;
+
+        final JsonElement policy = node.getAsJsonObject().get("contentClassificationLabelPolicyProperties");
+        if (policy == null || policy.isJsonNull()) return;
+        final JsonElement sign = policy.getAsJsonObject().get("signPostProperties");
+        if (sign == null || sign.isJsonNull()) return;
+
+        if (MATURE_SIGN_POST.equals(str(sign.getAsJsonObject(), "signPost")))
+            throw new MatureContentException(TwitchPlatform.class, kind.name().toLowerCase() + " '" + id + "' is marked as mature content");
+    }
+
+    // --- GQL HELPERS ---
+
+    private String gqlPost(final Object body) throws IOException {
+        try (final NetRequest req = NetRequest.create(URI.create(GQL_URL))
+                .method("POST")
+                .accept("application/json")
+                .contentType("application/json; charset=utf-8")
+                .header("Client-ID", CLIENT_ID)
+                .body(JSONTool.write(body))
+                .send()) {
+            if (req.statusCode() != 200) throw new PlatformException(TwitchPlatform.class, "HTTP " + req.statusCode() + " from GQL endpoint");
+            return req.readAllAsString();
+        }
+    }
+
+    private static Map<String, Object> persistedQuery(final String opName, final String hash, final Map<String, ?> variables) {
+        final Map<String, Object> op = new HashMap<>(3);
+        op.put("operationName", opName);
+        op.put("variables", variables);
+        op.put("extensions", Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash)));
+        return op;
+    }
+
+    // --- URL PARSING ---
+
+    private static String parseClipsHost(final String path, final String query) {
+        if ("/embed".equals(path) && query != null) {
+            return queryParam(query, "clip");
+        }
+        if (path != null && path.length() > 1) {
+            final String[] segments = path.substring(1).split("/");
+            final String last = segments[segments.length - 1];
+            return last.isEmpty() ? null : last;
+        }
+        return null;
+    }
+
+    private static String queryParam(final String query, final String key) {
+        if (query == null) return null;
+        for (final String param: query.split("&")) {
+            final String[] kv = param.split("=", 2);
+            if (kv.length == 2 && kv[0].equals(key)) return kv[1];
+        }
+        return null;
+    }
+
+}

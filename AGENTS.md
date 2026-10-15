@@ -5,7 +5,6 @@ Read-only dependency source repositories are available under `.agents/clonedeps/
 
 | Dependency | Version | Path |
 | --- | --- | --- |
-| `com.yfy.createcinema:createcinema` | `0.1.4-1.21.1` | `.agents/clonedeps/repos/com.yfy.createcinema__createcinema__eb86` |
 | `org.watermedia:watermedia` | `3.0.0.23` | `.agents/clonedeps/repos/org.watermedia__watermedia__3849` |
 
 <!-- clonedeps tail -->

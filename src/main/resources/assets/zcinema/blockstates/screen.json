@@ -1,8 +1,0 @@
-{
-  "variants": {
-    "facing=north": { "model": "zcinema:block/screen" },
-    "facing=east": { "model": "zcinema:block/screen" },
-    "facing=south": { "model": "zcinema:block/screen" },
-    "facing=west": { "model": "zcinema:block/screen" }
-  }
-}

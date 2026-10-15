@@ -1,6 +1,0 @@
-{
-  "textures": {
-    "layer0": "zcinema:item/emoji_thinking"
-  },
-  "parent": "minecraft:item/generated"
-}
