@@ -3,6 +3,7 @@ package com.zcinema;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -15,7 +16,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -38,6 +44,42 @@ public class ZCinemaMod implements ModInitializer {
             ResourceLocation.fromNamespaceAndPath(MOD_ID, "cinema_core"),
             BlockEntityType.Builder.of(CinemaCoreBlockEntity::new, CINEMA_CORE_BLOCK).build(null)
     );
+
+    public static final EntityType<EmojiEntity> EMOJI_ENTITY_TYPE = Registry.register(
+            BuiltInRegistries.ENTITY_TYPE,
+            ResourceLocation.fromNamespaceAndPath(MOD_ID, "emoji"),
+            EntityType.Builder.<EmojiEntity>of(EmojiEntity::new, MobCategory.MISC)
+                    .sized(0.5F, 0.5F)
+                    .noSave()
+                    .clientTrackingRange(10)
+                    .updateInterval(1)
+                    .build()
+    );
+
+    public static final EmojiItem[] EMOJI_ITEMS = new EmojiItem[EmojiItem.EMOJI_IDS.length];
+
+    static {
+        for (int i = 0; i < EmojiItem.EMOJI_IDS.length; i++) {
+            EMOJI_ITEMS[i] = Registry.register(
+                    BuiltInRegistries.ITEM,
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, EmojiItem.EMOJI_IDS[i]),
+                    new EmojiItem(i, new Item.Properties().stacksTo(64))
+            );
+        }
+        Registry.register(
+                BuiltInRegistries.CREATIVE_MODE_TAB,
+                ResourceLocation.fromNamespaceAndPath(MOD_ID, "emojis"),
+                FabricItemGroup.builder()
+                        .title(Component.translatable("itemGroup.zcinema.emojis"))
+                        .icon(() -> new ItemStack(EMOJI_ITEMS[0]))
+                        .displayItems((params, output) -> {
+                            for (EmojiItem item : EMOJI_ITEMS) {
+                                output.accept(item);
+                            }
+                        })
+                        .build()
+        );
+    }
 
     @Override
     public void onInitialize() {

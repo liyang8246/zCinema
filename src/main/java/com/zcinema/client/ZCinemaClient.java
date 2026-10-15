@@ -9,6 +9,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
@@ -27,6 +28,7 @@ public class ZCinemaClient implements ClientModInitializer {
         }
 
         BlockEntityRenderers.register(ZCinemaMod.CINEMA_CORE_BE, CinemaScreenRenderer::new);
+        EntityRendererRegistry.register(ZCinemaMod.EMOJI_ENTITY_TYPE, EmojiEntityRenderer::new);
 
         CinemaClientHooks.openControlScreen = pos -> {
             Minecraft mc = Minecraft.getInstance();
