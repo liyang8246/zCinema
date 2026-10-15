@@ -1,0 +1,22 @@
+# clonedeps
+.agents/clonedeps/repos/*
+
+# gradle / build
+.gradle/
+build/
+run/
+run-*/
+out/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
