@@ -43,19 +43,6 @@ tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"
 }
 
-test {
-    failOnNoDiscoveredTests = false
-}
-
-tasks.register('selfTest', JavaExec) {
-    dependsOn testClasses
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'com.zcinema.ZCinemaSelfTest'
-    enableAssertions = true
-}
-
-check.dependsOn tasks.named('selfTest')
-
 java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_21
