@@ -4,5 +4,11 @@
     "resolvedVersion": "0.1.4-1.21.1",
     "repoUrl": "https://github.com/Abuous/Createcinema.git",
     "ref": "eb86eade6afc38eab66c2c40866363a0c8a93804"
+  },
+  {
+    "name": "org.watermedia:watermedia",
+    "resolvedVersion": "3.0.0.23",
+    "repoUrl": "https://github.com/WaterMediaTeam/watermedia-v3.git",
+    "ref": "3849dc53e5c34a5290dce7fbd188f17493f1931a"
   }
 ]
