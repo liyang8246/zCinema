@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "zcinema",
+  "version": "${version}",
+  "name": "zCinema",
+  "description": "Multiplayer cinema mod for Fabric 1.21.1 powered by WaterMedia",
+  "authors": [
+    "zCinema"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.zcinema.ZCinemaMod"
+    ],
+    "client": [
+      "com.zcinema.client.ZCinemaClient"
+    ]
+  },
+  "mixins": [
+    "zcinema.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

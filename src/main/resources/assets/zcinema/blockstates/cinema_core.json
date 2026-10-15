@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "zcinema:block/cinema_core"
+    }
+  }
+}

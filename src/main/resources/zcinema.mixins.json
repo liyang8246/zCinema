@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.zcinema.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HudHideMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
