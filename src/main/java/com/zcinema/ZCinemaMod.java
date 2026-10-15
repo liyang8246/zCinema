@@ -33,6 +33,9 @@ import net.minecraft.world.phys.BlockHitResult;
 public class ZCinemaMod implements ModInitializer {
     public static final String MOD_ID = "zcinema";
 
+    /** Max screen edge length (blocks) when scanning black concrete. */
+    private static final int MAX_SCREEN_SIZE = 256;
+
     public static final Block CINEMA_CORE_BLOCK = Registry.register(
             BuiltInRegistries.BLOCK,
             ResourceLocation.fromNamespaceAndPath(MOD_ID, "cinema_core"),
@@ -160,27 +163,27 @@ public class ZCinemaMod implements ModInitializer {
         Direction rightDir = facing.getCounterClockWise();
 
         BlockPos rowLeft = clickedPos;
-        for (int i = 0; i < 64; i++) {
+        for (int i = 0; i < MAX_SCREEN_SIZE; i++) {
             BlockPos next = rowLeft.relative(leftDir);
             if (!isFreeBlackConcrete(level, next)) break;
             rowLeft = next;
         }
 
         int width = 0;
-        while (width < 64 && isFreeBlackConcrete(level, rowLeft.relative(rightDir, width))) {
+        while (width < MAX_SCREEN_SIZE && isFreeBlackConcrete(level, rowLeft.relative(rightDir, width))) {
             width++;
         }
         if (width <= 0) return;
 
         BlockPos bottomLeft = rowLeft;
-        for (int i = 0; i < 64; i++) {
+        for (int i = 0; i < MAX_SCREEN_SIZE; i++) {
             BlockPos candidate = bottomLeft.below();
             if (!isRowFreeBlackConcrete(level, candidate, rightDir, width)) break;
             bottomLeft = candidate;
         }
 
         int height = 0;
-        while (height < 64 && isRowFreeBlackConcrete(level, bottomLeft.above(height), rightDir, width)) {
+        while (height < MAX_SCREEN_SIZE && isRowFreeBlackConcrete(level, bottomLeft.above(height), rightDir, width)) {
             height++;
         }
         if (height <= 0) return;

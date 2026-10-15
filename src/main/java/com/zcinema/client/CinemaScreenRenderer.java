@@ -34,12 +34,14 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaCoreBlock
 
         // Core block is 1 block left of the screen's bottom-left corner:
         // In local space (+X = right along screen, +Y = up, +Z = facing viewer):
-        // Screen spans X in [0.5, 0.5 + width], Y in [-0.5, -0.5 + height], front face at Z = 0.502
+        // Screen spans X in [0.5, 0.5 + width], Y in [-0.5, -0.5 + height].
+        // Front face floats 0.1 blocks off the block (Z = 0.6) to avoid depth z-fighting that
+        // shows up as black flicker when viewed from far away.
         float x0 = 0.5f;
         float x1 = 0.5f + be.width;
         float y0 = -0.5f;
         float y1 = -0.5f + be.height;
-        float z = 0.502f;
+        float z = 0.6f;
 
         RenderSystem.enableDepthTest();
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
