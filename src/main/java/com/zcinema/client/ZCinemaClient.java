@@ -82,6 +82,7 @@ public class ZCinemaClient implements ClientModInitializer {
                 }
             }
             ScreenPlayerManager.tick(client);
+            client.options.hideGui = shouldHideHud();
         });
     }
 
