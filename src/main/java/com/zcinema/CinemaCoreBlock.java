@@ -12,31 +12,34 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 public class CinemaCoreBlock extends BaseEntityBlock {
-    public static final MapCodec<CinemaCoreBlock> CODEC = simpleCodec(CinemaCoreBlock::new);
+  public static final MapCodec<CinemaCoreBlock> CODEC = simpleCodec(CinemaCoreBlock::new);
 
-    public CinemaCoreBlock(Properties properties) {
-        super(properties);
-    }
+  public CinemaCoreBlock(Properties properties) {
+    super(properties);
+  }
 
-    @Override
-    protected MapCodec<? extends BaseEntityBlock> codec() {
-        return CODEC;
-    }
+  @Override
+  protected MapCodec<? extends BaseEntityBlock> codec() {
+    return CODEC;
+  }
 
-    @Override
-    public RenderShape getRenderShape(BlockState state) {
-        return RenderShape.MODEL;
-    }
+  @Override
+  public RenderShape getRenderShape(BlockState state) {
+    return RenderShape.MODEL;
+  }
 
-    @Nullable
-    @Override
-    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new CinemaCoreBlockEntity(pos, state);
-    }
+  @Nullable
+  @Override
+  public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+    return new CinemaCoreBlockEntity(pos, state);
+  }
 
-    @Nullable
-    @Override
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        return level.isClientSide ? null : createTickerHelper(type, ZCinemaMod.CINEMA_CORE_BE, CinemaCoreBlockEntity::serverTick);
-    }
+  @Nullable
+  @Override
+  public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
+      Level level, BlockState state, BlockEntityType<T> type) {
+    return level.isClientSide
+        ? null
+        : createTickerHelper(type, ZCinemaMod.CINEMA_CORE_BE, CinemaCoreBlockEntity::serverTick);
+  }
 }

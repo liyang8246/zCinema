@@ -1,6 +1,7 @@
 plugins {
     id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
     id 'maven-publish'
+    id 'com.diffplug.spotless' version '8.10.3'
 }
 
 version = project.mod_version
@@ -47,4 +48,12 @@ java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
+}
+
+// No style rules to maintain: google-java-format's defaults, checked by `check`.
+spotless {
+    java {
+        target 'src/**/*.java'
+        googleJavaFormat()
+    }
 }
