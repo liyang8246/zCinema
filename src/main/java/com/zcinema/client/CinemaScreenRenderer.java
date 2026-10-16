@@ -49,6 +49,23 @@ public class CinemaScreenRenderer implements BlockEntityRenderer<CinemaCoreBlock
 
         BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         Matrix4f mat = poseStack.last().pose();
+
+        // Black bars: full-screen black quad, video drawn on top of it.
+        buf.addVertex(mat, x0, y0, z).setUv(0.0f, 0.0f).setColor(0, 0, 0, 255);
+        buf.addVertex(mat, x1, y0, z).setUv(0.0f, 0.0f).setColor(0, 0, 0, 255);
+        buf.addVertex(mat, x1, y1, z).setUv(0.0f, 0.0f).setColor(0, 0, 0, 255);
+        buf.addVertex(mat, x0, y1, z).setUv(0.0f, 0.0f).setColor(0, 0, 0, 255);
+        z += 0.005f;
+
+        // Aspect-fit the video inside the screen (letterboxed, no crop/stretch);
+        // full screen while the video size is unknown (NO_SIZE == 0).
+        float vw = player.width(), vh = player.height();
+        if (vw > 0 && vh > 0) {
+            float s = Math.min(be.width / vw, be.height / vh);
+            float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            x0 = cx - vw * s / 2; x1 = cx + vw * s / 2;
+            y0 = cy - vh * s / 2; y1 = cy + vh * s / 2;
+        }
         buf.addVertex(mat, x0, y0, z).setUv(0.0f, 1.0f).setColor(255, 255, 255, 255);
         buf.addVertex(mat, x1, y0, z).setUv(1.0f, 1.0f).setColor(255, 255, 255, 255);
         buf.addVertex(mat, x1, y1, z).setUv(1.0f, 0.0f).setColor(255, 255, 255, 255);
